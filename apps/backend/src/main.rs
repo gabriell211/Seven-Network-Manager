@@ -6,22 +6,19 @@ use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 use async_trait::async_trait;
 use auth::AuthService;
 use axum::{
-    Json, Router,
-    extract::State,
-    http::{HeaderMap, HeaderName, StatusCode},
+    body::Body,
+    extract::{Request, State},
+    http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
+    middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
+    Json, Router,
 };
 use db::Database;
 use serde::Serialize;
-use tower_http::{
-    catch_panic::CatchPanicLayer,
-    request_id::{MakeRequestUuid, PropagateRequestIdLayer, SetRequestIdLayer},
-    timeout::TimeoutLayer,
-    trace::TraceLayer,
-};
-use tracing::{error, info, warn};
-use tracing_subscriber::EnvFilter;
+use snm_observability::{CorrelationContext, TelemetryConfig};
+use tower_http::{catch_panic::CatchPanicLayer, timeout::TimeoutLayer, trace::TraceLayer};
+use tracing::{error, info, warn, Instrument};
 
 #[derive(Clone)]
 struct AppState {
@@ -109,7 +106,13 @@ impl RuntimePort for HttpRuntimeClient {
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
-    init_tracing();
+    let telemetry = snm_observability::init(TelemetryConfig::from_env(
+        "snm-backend",
+        env!("CARGO_PKG_VERSION"),
+    ))?;
+    if let Some(exporter_error) = telemetry.exporter_error() {
+        warn!(error = exporter_error, "OTLP exporter disabled after configuration failure");
+    }
 
     let bind: SocketAddr = env::var("SNM_BACKEND_BIND")
         .unwrap_or_else(|_| "127.0.0.1:8080".to_owned())
@@ -138,7 +141,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         auth,
     };
 
-    let request_id_header = HeaderName::from_static("x-request-id");
     let app = Router::new()
         .route("/health", get(health))
         .route("/ready", get(ready))
@@ -152,8 +154,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
             StatusCode::REQUEST_TIMEOUT,
             Duration::from_secs(15),
         ))
-        .layer(PropagateRequestIdLayer::new(request_id_header.clone()))
-        .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid))
+        .layer(middleware::from_fn(correlation_middleware))
         .layer(TraceLayer::new_for_http())
         .layer(CatchPanicLayer::new());
 
@@ -163,7 +164,42 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     axum::serve(listener, app)
         .with_graceful_shutdown(shutdown_signal())
         .await?;
+    telemetry.shutdown();
     Ok(())
+}
+
+async fn correlation_middleware(mut request: Request<Body>, next: Next) -> Response {
+    let request_id = header_text(request.headers(), "x-request-id");
+    let correlation_id = header_text(request.headers(), "x-correlation-id");
+    let context = CorrelationContext::new(request_id, correlation_id);
+
+    let request_header = HeaderValue::from_str(&context.request_id().to_string())
+        .expect("UUID request ID is always a valid header value");
+    let correlation_header = HeaderValue::from_str(&context.correlation_id().to_string())
+        .expect("UUID correlation ID is always a valid header value");
+    request
+        .headers_mut()
+        .insert(HeaderName::from_static("x-request-id"), request_header.clone());
+    request.headers_mut().insert(
+        HeaderName::from_static("x-correlation-id"),
+        correlation_header.clone(),
+    );
+    request.extensions_mut().insert(context.clone());
+
+    let span = context.operation_span("http.server.request");
+    let mut response = next.run(request).instrument(span).await;
+    response
+        .headers_mut()
+        .insert(HeaderName::from_static("x-request-id"), request_header);
+    response.headers_mut().insert(
+        HeaderName::from_static("x-correlation-id"),
+        correlation_header,
+    );
+    response
+}
+
+fn header_text<'a>(headers: &'a HeaderMap, name: &str) -> Option<&'a str> {
+    headers.get(name).and_then(|value| value.to_str().ok())
 }
 
 fn non_empty_env(name: &str) -> Option<String> {
@@ -248,8 +284,6 @@ async fn ready(State(state): State<AppState>) -> Response {
         RuntimeHealth::Unavailable => ("degraded", "unavailable"),
     };
 
-    // Runtime availability is reported separately. The control-plane stays
-    // observable and never falls back to direct LAN execution.
     (
         StatusCode::OK,
         Json(ReadinessResponse {
@@ -287,15 +321,6 @@ fn env_flag(name: &str) -> bool {
     env::var(name)
         .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
         .unwrap_or(false)
-}
-
-fn init_tracing() {
-    let filter = EnvFilter::try_from_default_env().unwrap_or_else(|_| EnvFilter::new("info"));
-    tracing_subscriber::fmt()
-        .with_env_filter(filter)
-        .json()
-        .with_target(false)
-        .init();
 }
 
 async fn shutdown_signal() {
