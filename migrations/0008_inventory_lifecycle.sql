@@ -16,6 +16,9 @@ ALTER TABLE devices
   ADD COLUMN retired_at timestamptz,
   ADD COLUMN retirement_reason text;
 
+ALTER TABLE devices
+  ADD CONSTRAINT devices_id_organization_unique UNIQUE (id, organization_id);
+
 CREATE INDEX idx_devices_type_scope
   ON devices (organization_id, site_id, device_type, lifecycle_state);
 CREATE INDEX idx_devices_hostname_search
@@ -103,32 +106,52 @@ CREATE TABLE inventory_tags (
   normalized_name text GENERATED ALWAYS AS (lower(trim(name))) STORED,
   created_at timestamptz NOT NULL DEFAULT now(),
   CHECK (length(trim(name)) BETWEEN 1 AND 64),
-  UNIQUE (organization_id, normalized_name)
+  UNIQUE (organization_id, normalized_name),
+  UNIQUE (id, organization_id)
 );
 
 CREATE TABLE device_tags (
-  device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  tag_id uuid NOT NULL REFERENCES inventory_tags(id) ON DELETE CASCADE,
+  organization_id uuid NOT NULL,
+  site_id uuid NOT NULL,
+  device_id uuid NOT NULL,
+  tag_id uuid NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (device_id, organization_id, site_id)
+    REFERENCES devices(id, organization_id, site_id) ON DELETE CASCADE,
+  FOREIGN KEY (tag_id, organization_id)
+    REFERENCES inventory_tags(id, organization_id) ON DELETE CASCADE,
   PRIMARY KEY (device_id, tag_id)
 );
 
+ALTER TABLE credential_profiles
+  ADD CONSTRAINT credential_profiles_id_organization_unique
+  UNIQUE (id, organization_id);
+
 CREATE TABLE device_credential_profiles (
-  device_id uuid NOT NULL REFERENCES devices(id) ON DELETE CASCADE,
-  credential_profile_id uuid NOT NULL REFERENCES credential_profiles(id) ON DELETE RESTRICT,
+  organization_id uuid NOT NULL,
+  site_id uuid NOT NULL,
+  device_id uuid NOT NULL,
+  credential_profile_id uuid NOT NULL,
   purpose text NOT NULL DEFAULT 'management'
     CHECK (purpose IN ('management', 'monitoring', 'discovery', 'fallback')),
   priority integer NOT NULL DEFAULT 100 CHECK (priority BETWEEN 0 AND 10000),
   created_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (device_id, organization_id, site_id)
+    REFERENCES devices(id, organization_id, site_id) ON DELETE CASCADE,
+  FOREIGN KEY (credential_profile_id, organization_id)
+    REFERENCES credential_profiles(id, organization_id) ON DELETE RESTRICT,
   PRIMARY KEY (device_id, credential_profile_id, purpose)
 );
 
 CREATE TABLE device_lifecycle_events (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
-  device_id uuid NOT NULL REFERENCES devices(id) ON DELETE RESTRICT,
-  from_state text,
+  organization_id uuid NOT NULL,
+  site_id uuid NOT NULL,
+  device_id uuid NOT NULL,
+  from_state text CHECK (from_state IS NULL OR from_state IN (
+    'discovered', 'pending_review', 'managed', 'unmanaged',
+    'maintenance', 'retired', 'archived'
+  )),
   to_state text NOT NULL CHECK (to_state IN (
     'discovered', 'pending_review', 'managed', 'unmanaged',
     'maintenance', 'retired', 'archived'
@@ -137,7 +160,9 @@ CREATE TABLE device_lifecycle_events (
   actor_id uuid,
   reason text,
   correlation_id uuid NOT NULL,
-  created_at timestamptz NOT NULL DEFAULT now()
+  created_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (device_id, organization_id, site_id)
+    REFERENCES devices(id, organization_id, site_id) ON DELETE RESTRICT
 );
 
 CREATE INDEX idx_device_lifecycle_events_device_time
@@ -145,23 +170,27 @@ CREATE INDEX idx_device_lifecycle_events_device_time
 
 CREATE TABLE device_merges (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE RESTRICT,
-  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE RESTRICT,
-  source_device_id uuid NOT NULL REFERENCES devices(id) ON DELETE RESTRICT,
-  target_device_id uuid NOT NULL REFERENCES devices(id) ON DELETE RESTRICT,
+  organization_id uuid NOT NULL,
+  site_id uuid NOT NULL,
+  source_device_id uuid NOT NULL,
+  target_device_id uuid NOT NULL,
   actor_type text NOT NULL CHECK (actor_type IN ('user', 'service_account', 'system')),
   actor_id uuid,
   reason text NOT NULL,
   correlation_id uuid NOT NULL,
   merged_at timestamptz NOT NULL DEFAULT now(),
+  FOREIGN KEY (source_device_id, organization_id, site_id)
+    REFERENCES devices(id, organization_id, site_id) ON DELETE RESTRICT,
+  FOREIGN KEY (target_device_id, organization_id, site_id)
+    REFERENCES devices(id, organization_id, site_id) ON DELETE RESTRICT,
   CHECK (source_device_id <> target_device_id),
   UNIQUE (source_device_id)
 );
 
 CREATE TABLE inventory_import_runs (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
-  organization_id uuid NOT NULL REFERENCES organizations(id) ON DELETE CASCADE,
-  site_id uuid NOT NULL REFERENCES sites(id) ON DELETE CASCADE,
+  organization_id uuid NOT NULL,
+  site_id uuid NOT NULL,
   idempotency_key text NOT NULL,
   payload_digest bytea NOT NULL,
   status text NOT NULL CHECK (status IN ('processing', 'completed', 'partial', 'failed')),
@@ -171,6 +200,8 @@ CREATE TABLE inventory_import_runs (
   failed_count integer NOT NULL DEFAULT 0 CHECK (failed_count >= 0),
   created_at timestamptz NOT NULL DEFAULT now(),
   finished_at timestamptz,
+  FOREIGN KEY (site_id, organization_id)
+    REFERENCES sites(id, organization_id) ON DELETE CASCADE,
   UNIQUE (organization_id, site_id, idempotency_key)
 );
 
