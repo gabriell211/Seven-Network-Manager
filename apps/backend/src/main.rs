@@ -1,15 +1,17 @@
+mod auth;
 mod db;
 mod outbox;
 
 use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
+use auth::AuthService;
 use axum::{
     Json, Router,
     extract::State,
     http::{HeaderMap, HeaderName, StatusCode},
     response::{IntoResponse, Response},
-    routing::get,
+    routing::{get, post},
 };
 use db::Database;
 use serde::Serialize;
@@ -26,6 +28,7 @@ use tracing_subscriber::EnvFilter;
 struct AppState {
     runtime: Arc<dyn RuntimePort>,
     database: Database,
+    auth: Arc<AuthService>,
 }
 
 #[derive(Debug, Serialize)]
@@ -127,9 +130,13 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     }
     maybe_bootstrap_scope(&database).await?;
 
+    let auth = Arc::new(AuthService::from_env(database.clone())?);
+    maybe_bootstrap_admin(&auth).await?;
+
     let state = AppState {
         runtime: Arc::new(HttpRuntimeClient::new(runtime_url)?),
         database,
+        auth,
     };
 
     let request_id_header = HeaderName::from_static("x-request-id");
@@ -137,6 +144,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/health", get(health))
         .route("/ready", get(ready))
         .route("/api/v1/system", get(system))
+        .route("/api/v1/auth/login", post(auth::login))
+        .route("/api/v1/auth/refresh", post(auth::refresh))
+        .route("/api/v1/auth/logout", post(auth::logout))
+        .route("/api/v1/auth/me", get(auth::me))
         .with_state(state)
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
@@ -174,6 +185,25 @@ async fn maybe_bootstrap_scope(database: &Database) -> Result<(), sqlx::Error> {
         )
         .await?;
     info!(%organization_id, %site_id, %routing_domain_id, "bootstrap scope ready");
+    Ok(())
+}
+
+async fn maybe_bootstrap_admin(auth: &AuthService) -> Result<(), Box<dyn std::error::Error>> {
+    let Ok(email) = env::var("SNM_BOOTSTRAP_ADMIN_EMAIL") else {
+        return Ok(());
+    };
+    let organization_slug = env::var("SNM_BOOTSTRAP_ORG_SLUG")?;
+    let password = env::var("SNM_BOOTSTRAP_ADMIN_PASSWORD")?;
+    let display_name =
+        env::var("SNM_BOOTSTRAP_ADMIN_NAME").unwrap_or_else(|_| "SNM Administrator".to_owned());
+    auth.bootstrap_admin(
+        &organization_slug,
+        &email,
+        &display_name,
+        password.as_bytes(),
+    )
+    .await?;
+    info!("bootstrap administrator ensured");
     Ok(())
 }
 
