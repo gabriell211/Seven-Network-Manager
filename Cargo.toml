@@ -2,6 +2,7 @@
 members = [
   "apps/backend",
   "apps/site-runtime",
+  "crates/audit-store",
   "crates/domain",
   "crates/executor-core",
   "crates/identity-store",
