@@ -94,8 +94,8 @@ impl OutboxStore {
         if worker_id.trim().is_empty() || batch_size <= 0 {
             return Err(OutboxError::InvalidClaim);
         }
-        let lease_seconds = i32::try_from(lease.as_secs().clamp(1, 300))
-            .map_err(|_| OutboxError::InvalidClaim)?;
+        let lease_seconds =
+            i32::try_from(lease.as_secs().clamp(1, 300)).map_err(|_| OutboxError::InvalidClaim)?;
         let rows = sqlx::query(
             r#"
             WITH picked AS (
@@ -339,7 +339,10 @@ where
     }
 
     pub async fn dispatch_once(&self, batch_size: i64) -> Result<usize, OutboxError> {
-        let events = self.store.claim(&self.worker_id, batch_size, self.lease).await?;
+        let events = self
+            .store
+            .claim(&self.worker_id, batch_size, self.lease)
+            .await?;
         let count = events.len();
         let mut handles = Vec::with_capacity(count);
         for event in events {
@@ -381,7 +384,9 @@ where
             }));
         }
         for handle in handles {
-            handle.await.map_err(|_| OutboxError::DispatcherTaskFailed)??;
+            handle
+                .await
+                .map_err(|_| OutboxError::DispatcherTaskFailed)??;
         }
         Ok(count)
     }
@@ -432,7 +437,9 @@ mod tests {
         async fn publish(&self, _event: &OutboxEvent) -> Result<(), PublishError> {
             let call = self.calls.fetch_add(1, Ordering::SeqCst);
             if self.fail_first && call == 0 {
-                Err(PublishError { code: "fixture_failure".into() })
+                Err(PublishError {
+                    code: "fixture_failure".into(),
+                })
             } else {
                 Ok(())
             }
@@ -508,9 +515,24 @@ mod tests {
         let Some(pool) = pool().await else { return };
         let store = OutboxStore::new(pool);
         let event_id = Uuid::now_v7();
-        assert!(store.record_consumption("fixture-consumer", event_id).await.unwrap());
-        assert!(!store.record_consumption("fixture-consumer", event_id).await.unwrap());
-        assert!(store.record_consumption("another-consumer", event_id).await.unwrap());
+        assert!(
+            store
+                .record_consumption("fixture-consumer", event_id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !store
+                .record_consumption("fixture-consumer", event_id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            store
+                .record_consumption("another-consumer", event_id)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]
