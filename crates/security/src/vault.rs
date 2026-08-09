@@ -48,7 +48,9 @@ impl KeyRing {
 
     pub fn current(&self) -> Result<&MasterKey, VaultError> {
         let version = self.current_version.ok_or(VaultError::NoCurrentMasterKey)?;
-        self.keys.get(&version).ok_or(VaultError::MissingMasterKey(version))
+        self.keys
+            .get(&version)
+            .ok_or(VaultError::MissingMasterKey(version))
     }
 
     pub fn get(&self, version: u32) -> Result<&MasterKey, VaultError> {
@@ -76,8 +78,8 @@ impl EncryptedSecret {
 
         let mut data_nonce = [0_u8; 12];
         OsRng.fill_bytes(&mut data_nonce);
-        let data_cipher = Aes256Gcm::new_from_slice(dek.as_ref())
-            .map_err(|_| VaultError::InvalidDataKey)?;
+        let data_cipher =
+            Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|_| VaultError::InvalidDataKey)?;
         let ciphertext = data_cipher
             .encrypt(
                 Nonce::from_slice(&data_nonce),
@@ -130,8 +132,8 @@ impl EncryptedSecret {
                 )
                 .map_err(|_| VaultError::DecryptionFailed)?,
         );
-        let cipher = Aes256Gcm::new_from_slice(dek.as_ref())
-            .map_err(|_| VaultError::InvalidDataKey)?;
+        let cipher =
+            Aes256Gcm::new_from_slice(dek.as_ref()).map_err(|_| VaultError::InvalidDataKey)?;
         let plaintext = cipher
             .decrypt(
                 Nonce::from_slice(&self.data_nonce),
@@ -194,10 +196,12 @@ mod tests {
         let aad = b"organization/site/credential-profile";
         let plaintext = b"SNM-SENTINEL-SECRET-DO-NOT-LEAK";
         let encrypted = EncryptedSecret::encrypt(plaintext, aad, &key(1, 7)).unwrap();
-        assert!(!encrypted
-            .ciphertext
-            .windows(plaintext.len())
-            .any(|window| window == plaintext));
+        assert!(
+            !encrypted
+                .ciphertext
+                .windows(plaintext.len())
+                .any(|window| window == plaintext)
+        );
 
         let mut ring = KeyRing::default();
         ring.insert(key(1, 7), true);

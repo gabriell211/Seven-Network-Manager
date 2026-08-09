@@ -128,6 +128,9 @@ mod tests {
         let codes = issue_recovery_codes(8).unwrap();
         let first = codes.expose_once().next().unwrap().as_bytes().to_vec();
         assert!(recovery_code_matches(&first, &codes.hashes[0]));
-        assert!(!recovery_code_matches(b"not-a-recovery-code", &codes.hashes[0]));
+        assert!(!recovery_code_matches(
+            b"not-a-recovery-code",
+            &codes.hashes[0]
+        ));
     }
 }

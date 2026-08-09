@@ -152,15 +152,17 @@ mod tests {
                 },
             }],
         };
-        assert!(context
-            .authorize(&AuthorizationRequest {
-                permission: permission("vlans.write"),
-                scope: ResourceScope {
-                    organization_id,
-                    site_id: Some(site_a),
-                },
-            })
-            .is_ok());
+        assert!(
+            context
+                .authorize(&AuthorizationRequest {
+                    permission: permission("vlans.write"),
+                    scope: ResourceScope {
+                        organization_id,
+                        site_id: Some(site_a),
+                    },
+                })
+                .is_ok()
+        );
         assert_eq!(
             context
                 .authorize(&AuthorizationRequest {

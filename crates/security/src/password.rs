@@ -26,13 +26,8 @@ impl Default for PasswordPolicy {
 
 impl PasswordPolicy {
     fn argon2(&self) -> Result<Argon2<'static>, PasswordError> {
-        let params = Params::new(
-            self.memory_kib,
-            self.iterations,
-            self.parallelism,
-            Some(32),
-        )
-        .map_err(|_| PasswordError::InvalidPolicy)?;
+        let params = Params::new(self.memory_kib, self.iterations, self.parallelism, Some(32))
+            .map_err(|_| PasswordError::InvalidPolicy)?;
         Ok(Argon2::new(Algorithm::Argon2id, Version::V0x13, params))
     }
 }

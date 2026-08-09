@@ -1,8 +1,8 @@
 use std::time::Duration;
 
 use serde::Serialize;
-use sqlx::postgres::PgPoolOptions;
 use sqlx::PgPool;
+use sqlx::postgres::PgPoolOptions;
 use uuid::Uuid;
 
 #[derive(Clone)]

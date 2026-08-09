@@ -49,7 +49,8 @@ impl AuditEventDraft {
 
     pub fn seal(self, previous_hash: Option<[u8; 32]>) -> Result<SealedAuditEvent, AuditError> {
         let sanitized = self.sanitize();
-        let payload = serde_json::to_vec(&sanitized).map_err(|_| AuditError::SerializationFailed)?;
+        let payload =
+            serde_json::to_vec(&sanitized).map_err(|_| AuditError::SerializationFailed)?;
         let mut hasher = Sha256::new();
         hasher.update(b"snm:audit:v1\0");
         if let Some(previous) = previous_hash {

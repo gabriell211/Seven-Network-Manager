@@ -56,12 +56,10 @@ pub fn encode_access_token(
         alg: "HS256".to_owned(),
         typ: "JWT".to_owned(),
     };
-    let encoded_header = URL_SAFE_NO_PAD.encode(
-        serde_json::to_vec(&header).map_err(|_| TokenError::SerializationFailed)?,
-    );
-    let encoded_claims = URL_SAFE_NO_PAD.encode(
-        serde_json::to_vec(claims).map_err(|_| TokenError::SerializationFailed)?,
-    );
+    let encoded_header = URL_SAFE_NO_PAD
+        .encode(serde_json::to_vec(&header).map_err(|_| TokenError::SerializationFailed)?);
+    let encoded_claims = URL_SAFE_NO_PAD
+        .encode(serde_json::to_vec(claims).map_err(|_| TokenError::SerializationFailed)?);
     let signing_input = format!("{encoded_header}.{encoded_claims}");
     let mut mac = key.mac()?;
     mac.update(signing_input.as_bytes());
@@ -185,12 +183,12 @@ pub fn hash_opaque_token(token: &[u8]) -> [u8; 32] {
 
 pub fn opaque_token_matches(token: &[u8], expected_hash: &[u8; 32]) -> bool {
     let actual = hash_opaque_token(token);
-    let mut mac = HmacSha256::new_from_slice(b"snm-token-hash-compare")
-        .expect("constant HMAC key is valid");
+    let mut mac =
+        HmacSha256::new_from_slice(b"snm-token-hash-compare").expect("constant HMAC key is valid");
     mac.update(&actual);
     let left = mac.clone().finalize().into_bytes();
-    let mut right_mac = HmacSha256::new_from_slice(b"snm-token-hash-compare")
-        .expect("constant HMAC key is valid");
+    let mut right_mac =
+        HmacSha256::new_from_slice(b"snm-token-hash-compare").expect("constant HMAC key is valid");
     right_mac.update(expected_hash);
     right_mac.verify_slice(&left).is_ok()
 }
@@ -273,7 +271,10 @@ mod tests {
     fn opaque_token_is_single_reveal_material_with_hash_for_storage() {
         let token = issue_opaque_token("snm_sa").unwrap();
         assert!(token.expose_once().starts_with("snm_sa_"));
-        assert!(opaque_token_matches(token.expose_once().as_bytes(), &token.hash));
+        assert!(opaque_token_matches(
+            token.expose_once().as_bytes(),
+            &token.hash
+        ));
         assert!(!opaque_token_matches(b"wrong", &token.hash));
     }
 }
