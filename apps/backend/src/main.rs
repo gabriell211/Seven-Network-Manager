@@ -2,11 +2,11 @@ use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use axum::{
+    Json, Router,
     extract::State,
     http::{HeaderName, Request, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
-    Json, Router,
 };
 use serde::Serialize;
 use tower_http::{
@@ -86,7 +86,12 @@ impl HttpRuntimeClient {
 #[async_trait]
 impl RuntimePort for HttpRuntimeClient {
     async fn health(&self) -> RuntimeHealth {
-        match self.client.get(format!("{}/health", self.base_url)).send().await {
+        match self
+            .client
+            .get(format!("{}/health", self.base_url))
+            .send()
+            .await
+        {
             Ok(response) if response.status().is_success() => RuntimeHealth::Ready,
             _ => RuntimeHealth::Unavailable,
         }
@@ -100,8 +105,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let bind: SocketAddr = env::var("SNM_BACKEND_BIND")
         .unwrap_or_else(|_| "127.0.0.1:8080".to_owned())
         .parse()?;
-    let runtime_url = env::var("SNM_RUNTIME_URL")
-        .unwrap_or_else(|_| "http://127.0.0.1:9765".to_owned());
+    let runtime_url =
+        env::var("SNM_RUNTIME_URL").unwrap_or_else(|_| "http://127.0.0.1:9765".to_owned());
 
     let state = AppState {
         runtime: Arc::new(HttpRuntimeClient::new(runtime_url)?),
