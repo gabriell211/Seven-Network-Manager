@@ -9,17 +9,9 @@ use snm_domain::{Capability, ExecutionStatus, TcpConnectRequest};
 use thiserror::Error;
 use tokio::{net::TcpStream, time::timeout};
 
-#[derive(Clone, Debug)]
+#[derive(Clone, Debug, Default)]
 pub struct NetworkPolicy {
     pub allow_public_targets: bool,
-}
-
-impl Default for NetworkPolicy {
-    fn default() -> Self {
-        Self {
-            allow_public_targets: false,
-        }
-    }
 }
 
 impl NetworkPolicy {
