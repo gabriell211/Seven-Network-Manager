@@ -6,6 +6,7 @@ members = [
   "crates/executor-core",
   "crates/platform-events",
   "crates/security",
+  "crates/security-store",
 ]
 resolver = "2"
 
