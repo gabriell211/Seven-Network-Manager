@@ -47,9 +47,9 @@ fn context(organization_id: Uuid, site_id: Uuid) -> MutationContext {
     MutationContext {
         organization_id,
         site_id,
-        actor_type: AuditActorType::User,
-        actor_id: Some(Uuid::now_v7()),
-        session_id: Some(Uuid::now_v7()),
+        actor_type: AuditActorType::System,
+        actor_id: None,
+        session_id: None,
         source_ip: Some("127.0.0.1".into()),
         request_id: Uuid::now_v7().to_string(),
         correlation_id: Uuid::now_v7(),

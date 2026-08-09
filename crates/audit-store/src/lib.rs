@@ -29,11 +29,16 @@ impl AuditStore {
     ) -> Result<Uuid, AuditStoreError> {
         validate_draft(&draft)?;
         lock_organization_chain(tx, draft.organization_id).await?;
-        let (chain_sequence, previous_hash) = next_chain_position(tx, draft.organization_id).await?;
+        let (chain_sequence, previous_hash) =
+            next_chain_position(tx, draft.organization_id).await?;
         let sealed = draft.seal(previous_hash)?;
         let canonical_payload = serde_json::to_vec(&sealed.event)?;
         let id = Uuid::now_v7();
-        let result = sealed.event.result.clone().unwrap_or(serde_json::Value::Null);
+        let result = sealed
+            .event
+            .result
+            .clone()
+            .unwrap_or(serde_json::Value::Null);
 
         sqlx::query(
             r#"
@@ -64,7 +69,12 @@ impl AuditStore {
         .bind(sealed.event.correlation_id)
         .bind(sealed.event.provider.as_deref())
         .bind(status_str(sealed.event.status))
-        .bind(sealed.event.duration_ms.map(|value| i64::try_from(value).unwrap_or(i64::MAX)))
+        .bind(
+            sealed
+                .event
+                .duration_ms
+                .map(|value| i64::try_from(value).unwrap_or(i64::MAX)),
+        )
         .bind(sealed.event.reason_code.as_deref())
         .bind(sealed.event.before.as_ref())
         .bind(sealed.event.after.as_ref())
@@ -177,7 +187,12 @@ async fn next_chain_position(
         Some(row) => {
             let sequence: i64 = row.try_get("chain_sequence")?;
             let hash = fixed::<32>(row.try_get("event_hash")?)?;
-            Ok((sequence.checked_add(1).ok_or(AuditStoreError::InvalidStoredChain)?, Some(hash)))
+            Ok((
+                sequence
+                    .checked_add(1)
+                    .ok_or(AuditStoreError::InvalidStoredChain)?,
+                Some(hash),
+            ))
         }
         None => Ok((1, None)),
     }
@@ -321,8 +336,14 @@ mod tests {
         let Some(pool) = pool().await else { return };
         let organization_id = organization(&pool).await;
         let store = AuditStore::new(pool.clone());
-        store.append(draft(organization_id, "fixture.one", 1000)).await.unwrap();
-        store.append(draft(organization_id, "fixture.two", 1001)).await.unwrap();
+        store
+            .append(draft(organization_id, "fixture.one", 1000))
+            .await
+            .unwrap();
+        store
+            .append(draft(organization_id, "fixture.two", 1001))
+            .await
+            .unwrap();
 
         let payloads: Vec<Vec<u8>> = sqlx::query_scalar(
             "SELECT canonical_payload FROM audit_events WHERE organization_id = $1 AND chain_sequence IS NOT NULL ORDER BY chain_sequence",
@@ -340,7 +361,10 @@ mod tests {
             assert!(text.contains("[REDACTED]"));
         }
         assert_eq!(
-            store.verify_organization_chain(organization_id).await.unwrap(),
+            store
+                .verify_organization_chain(organization_id)
+                .await
+                .unwrap(),
             AuditVerification::Valid { checked: 2 }
         );
     }
@@ -379,15 +403,22 @@ mod tests {
         let first = store.clone();
         let second = store.clone();
         let a = tokio::spawn(async move {
-            first.append(draft(organization_id, "fixture.a", 5000)).await
+            first
+                .append(draft(organization_id, "fixture.a", 5000))
+                .await
         });
         let b = tokio::spawn(async move {
-            second.append(draft(organization_id, "fixture.b", 1000)).await
+            second
+                .append(draft(organization_id, "fixture.b", 1000))
+                .await
         });
         a.await.unwrap().unwrap();
         b.await.unwrap().unwrap();
         assert_eq!(
-            store.verify_organization_chain(organization_id).await.unwrap(),
+            store
+                .verify_organization_chain(organization_id)
+                .await
+                .unwrap(),
             AuditVerification::Valid { checked: 2 }
         );
     }

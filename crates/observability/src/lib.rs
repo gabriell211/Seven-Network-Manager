@@ -1,21 +1,15 @@
 use std::{env, time::Duration};
 
-use opentelemetry::{global, trace::TracerProvider as _, KeyValue};
+use opentelemetry::{KeyValue, global, trace::TracerProvider as _};
 use opentelemetry_otlp::{Protocol, WithExportConfig};
 use opentelemetry_sdk::{
-    metrics::SdkMeterProvider,
-    propagation::TraceContextPropagator,
+    Resource, metrics::SdkMeterProvider, propagation::TraceContextPropagator,
     trace::SdkTracerProvider,
-    Resource,
 };
 use serde_json::{Map, Value};
 use thiserror::Error;
 use tracing::Span;
-use tracing_subscriber::{
-    layer::SubscriberExt,
-    util::SubscriberInitExt,
-    EnvFilter,
-};
+use tracing_subscriber::{EnvFilter, layer::SubscriberExt, util::SubscriberInitExt};
 use uuid::Uuid;
 
 pub const CONVENTION_VERSION: &str = "snm.telemetry.v1";
@@ -323,7 +317,12 @@ pub fn is_sensitive_key(key: &str) -> bool {
 
 fn env_flag(name: &str) -> bool {
     env::var(name)
-        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .map(|value| {
+            matches!(
+                value.to_ascii_lowercase().as_str(),
+                "1" | "true" | "yes" | "on"
+            )
+        })
         .unwrap_or(false)
 }
 
@@ -429,7 +428,8 @@ mod tests {
     fn correlation_context_preserves_valid_ids_and_replaces_invalid_ids() {
         let request = Uuid::now_v7();
         let correlation = Uuid::now_v7();
-        let context = CorrelationContext::new(Some(&request.to_string()), Some(&correlation.to_string()));
+        let context =
+            CorrelationContext::new(Some(&request.to_string()), Some(&correlation.to_string()));
         assert_eq!(context.request_id(), request);
         assert_eq!(context.correlation_id(), correlation);
 

@@ -224,7 +224,8 @@ mod tests {
         .fetch_one(database.pool())
         .await
         .unwrap();
-        let password_hash = hash_password(b"test-only-password", PasswordPolicy::default()).unwrap();
+        let password_hash =
+            hash_password(b"test-only-password", PasswordPolicy::default()).unwrap();
         let user_id: Uuid = sqlx::query_scalar(
             r#"
             INSERT INTO users (organization_id, email, display_name, status, password_hash)
@@ -256,7 +257,9 @@ mod tests {
 
     #[tokio::test]
     async fn site_binding_does_not_authorize_another_site() {
-        let Some(database) = database().await else { return };
+        let Some(database) = database().await else {
+            return;
+        };
         let (organization_id, site_a, site_b, user_id, session_id) = fixture(&database).await;
         let permission_id: Uuid = sqlx::query_scalar(
             "INSERT INTO permissions (code, description) VALUES ($1, 'fixture') ON CONFLICT (code) DO UPDATE SET description = excluded.description RETURNING id",
@@ -301,16 +304,25 @@ mod tests {
             organization_id,
         };
         let service = service(database);
-        assert!(service.require_site_permission(&principal, site_a, &permission).await.is_ok());
+        assert!(
+            service
+                .require_site_permission(&principal, site_a, &permission)
+                .await
+                .is_ok()
+        );
         assert!(matches!(
-            service.require_site_permission(&principal, site_b, &permission).await,
+            service
+                .require_site_permission(&principal, site_b, &permission)
+                .await,
             Err(AuthorizationError::PermissionDenied)
         ));
     }
 
     #[tokio::test]
     async fn revoked_session_is_rejected_even_with_valid_signature() {
-        let Some(database) = database().await else { return };
+        let Some(database) = database().await else {
+            return;
+        };
         let (organization_id, _site_a, _site_b, user_id, session_id) = fixture(&database).await;
         let key = AccessTokenKey::new(TEST_KEY.to_vec()).unwrap();
         let now = Utc::now();

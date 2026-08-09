@@ -305,11 +305,19 @@ mod tests {
             "aabbcc001122"
         );
         assert_eq!(
-            IdentifierKind::Hostname.normalize("SW-CORE.EXAMPLE.").unwrap(),
+            IdentifierKind::Hostname
+                .normalize("SW-CORE.EXAMPLE.")
+                .unwrap(),
             "sw-core.example"
         );
-        assert_eq!(IdentifierKind::Serial.strength(), IdentifierStrength::Strong);
-        assert_eq!(IdentifierKind::Hostname.strength(), IdentifierStrength::Weak);
+        assert_eq!(
+            IdentifierKind::Serial.strength(),
+            IdentifierStrength::Strong
+        );
+        assert_eq!(
+            IdentifierKind::Hostname.strength(),
+            IdentifierStrength::Weak
+        );
     }
 
     #[test]

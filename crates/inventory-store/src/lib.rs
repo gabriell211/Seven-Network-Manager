@@ -2,11 +2,9 @@ use std::collections::BTreeSet;
 
 use chrono::{DateTime, Utc};
 use serde::{Deserialize, Serialize};
-use serde_json::{json, Value};
+use serde_json::{Value, json};
 use snm_audit_store::{AuditStore, AuditStoreError};
-use snm_domain::inventory::{
-    DeviceLifecycle, DeviceType, IdentifierKind, IdentifierStrength,
-};
+use snm_domain::inventory::{DeviceLifecycle, DeviceType, IdentifierKind, IdentifierStrength};
 use snm_platform_events::{NewOutboxEvent, OutboxError, OutboxStore};
 use snm_security::audit::{AuditActorType, AuditEventDraft, AuditStatus};
 use sqlx::{PgPool, Postgres, QueryBuilder, Row, Transaction};
@@ -69,7 +67,12 @@ impl InventoryStore {
             builder.push(" AND d.device_type = ");
             builder.push_bind(device_type.as_str());
         }
-        if let Some(search) = query.search.as_deref().map(str::trim).filter(|v| !v.is_empty()) {
+        if let Some(search) = query
+            .search
+            .as_deref()
+            .map(str::trim)
+            .filter(|v| !v.is_empty())
+        {
             let contains = format!("%{}%", search.to_ascii_lowercase());
             let normalized: String = search
                 .chars()
@@ -97,7 +100,7 @@ impl InventoryStore {
             if normalized.is_empty() {
                 builder.push(" OR false");
             } else {
-                builder.push(" OR di.normalized_value LIKE ");
+                builder.push(" OR regexp_replace(di.normalized_value, '[^a-z0-9]', '', 'g') LIKE ");
                 builder.push_bind(format!("%{normalized}%"));
             }
             builder.push(
@@ -197,8 +200,15 @@ impl InventoryStore {
             &input,
         )
         .await?;
-        append_lifecycle_event(&mut tx, context, device_id, None, lifecycle, Some("manual_create"))
-            .await?;
+        append_lifecycle_event(
+            &mut tx,
+            context,
+            device_id,
+            None,
+            lifecycle,
+            Some("manual_create"),
+        )
+        .await?;
 
         let device = load_device_in_tx(
             &mut tx,
@@ -261,9 +271,15 @@ impl InventoryStore {
             .hostname
             .clone()
             .unwrap_or_else(|| current.hostname.clone());
-        let next_vendor = patch.vendor.clone().unwrap_or_else(|| current.vendor.clone());
+        let next_vendor = patch
+            .vendor
+            .clone()
+            .unwrap_or_else(|| current.vendor.clone());
         let next_model = patch.model.clone().unwrap_or_else(|| current.model.clone());
-        let next_os_name = patch.os_name.clone().unwrap_or_else(|| current.os_name.clone());
+        let next_os_name = patch
+            .os_name
+            .clone()
+            .unwrap_or_else(|| current.os_name.clone());
         let next_os_version = patch
             .os_version
             .clone()
@@ -559,9 +575,10 @@ impl InventoryStore {
 
         let device_id = Uuid::now_v7();
         let serial = first_identifier_value(&observation.identifiers, IdentifierKind::Serial);
-        let hostname = observation.hostname.clone().or_else(|| {
-            first_identifier_value(&observation.identifiers, IdentifierKind::Hostname)
-        });
+        let hostname = observation
+            .hostname
+            .clone()
+            .or_else(|| first_identifier_value(&observation.identifiers, IdentifierKind::Hostname));
         sqlx::query(
             r#"
             INSERT INTO devices (
@@ -736,11 +753,18 @@ impl NewDevice {
             self.firmware_version.as_deref(),
             self.operational_owner.as_deref(),
         ])?;
-        if self.description.as_ref().is_some_and(|value| value.len() > 4096) {
+        if self
+            .description
+            .as_ref()
+            .is_some_and(|value| value.len() > 4096)
+        {
             return Err(InventoryError::InvalidInput("description is too long"));
         }
         if self.capabilities.len() > 256
-            || self.capabilities.iter().any(|value| value.trim().is_empty() || value.len() > 120)
+            || self
+                .capabilities
+                .iter()
+                .any(|value| value.trim().is_empty() || value.len() > 120)
         {
             return Err(InventoryError::InvalidInput("capabilities are invalid"));
         }
@@ -1022,7 +1046,15 @@ async fn persist_declared_facts(
     device_id: Uuid,
     input: &NewDevice,
 ) -> Result<(), InventoryError> {
-    upsert_declared_fact(tx, organization_id, site_id, device_id, "device_type", json!(input.device_type.as_str())).await?;
+    upsert_declared_fact(
+        tx,
+        organization_id,
+        site_id,
+        device_id,
+        "device_type",
+        json!(input.device_type.as_str()),
+    )
+    .await?;
     for (field, value) in [
         ("display_name", input.display_name.as_ref()),
         ("hostname", input.hostname.as_ref()),
@@ -1035,11 +1067,20 @@ async fn persist_declared_facts(
         ("operational_owner", input.operational_owner.as_ref()),
     ] {
         if let Some(value) = value {
-            upsert_declared_fact(tx, organization_id, site_id, device_id, field, json!(value)).await?;
+            upsert_declared_fact(tx, organization_id, site_id, device_id, field, json!(value))
+                .await?;
         }
     }
     if !input.capabilities.is_empty() {
-        upsert_declared_fact(tx, organization_id, site_id, device_id, "capabilities", json!(input.capabilities)).await?;
+        upsert_declared_fact(
+            tx,
+            organization_id,
+            site_id,
+            device_id,
+            "capabilities",
+            json!(input.capabilities),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -1052,7 +1093,15 @@ async fn persist_patch_facts(
     patch: &MetadataPatch,
 ) -> Result<(), InventoryError> {
     if let Some(device_type) = patch.device_type {
-        upsert_declared_fact(tx, organization_id, site_id, device_id, "device_type", json!(device_type.as_str())).await?;
+        upsert_declared_fact(
+            tx,
+            organization_id,
+            site_id,
+            device_id,
+            "device_type",
+            json!(device_type.as_str()),
+        )
+        .await?;
     }
     let fields: [(&str, &Option<Option<String>>); 9] = [
         ("display_name", &patch.display_name),
@@ -1067,11 +1116,20 @@ async fn persist_patch_facts(
     ];
     for (field, value) in fields {
         if let Some(value) = value {
-            upsert_declared_fact(tx, organization_id, site_id, device_id, field, json!(value)).await?;
+            upsert_declared_fact(tx, organization_id, site_id, device_id, field, json!(value))
+                .await?;
         }
     }
     if let Some(capabilities) = &patch.capabilities {
-        upsert_declared_fact(tx, organization_id, site_id, device_id, "capabilities", json!(capabilities)).await?;
+        upsert_declared_fact(
+            tx,
+            organization_id,
+            site_id,
+            device_id,
+            "capabilities",
+            json!(capabilities),
+        )
+        .await?;
     }
     Ok(())
 }
@@ -1105,6 +1163,14 @@ async fn upsert_declared_fact(
     Ok(())
 }
 
+struct ObservedFactContext<'a> {
+    organization_id: Uuid,
+    site_id: Uuid,
+    device_id: Uuid,
+    source: &'a str,
+    observed_at: DateTime<Utc>,
+}
+
 async fn persist_observed_facts(
     tx: &mut Transaction<'_, Postgres>,
     organization_id: Uuid,
@@ -1113,15 +1179,18 @@ async fn persist_observed_facts(
     observation: &DeviceObservation,
     observed_at: DateTime<Utc>,
 ) -> Result<(), InventoryError> {
-    upsert_observed_fact(
-        tx,
+    let context = ObservedFactContext {
         organization_id,
         site_id,
         device_id,
+        source: "discovery",
+        observed_at,
+    };
+    upsert_observed_fact(
+        tx,
+        &context,
         "device_type",
         json!(observation.device_type.as_str()),
-        "discovery",
-        observed_at,
     )
     .await?;
     for (field, value) in [
@@ -1134,29 +1203,15 @@ async fn persist_observed_facts(
         ("firmware_version", observation.firmware_version.as_ref()),
     ] {
         if let Some(value) = value {
-            upsert_observed_fact(
-                tx,
-                organization_id,
-                site_id,
-                device_id,
-                field,
-                json!(value),
-                "discovery",
-                observed_at,
-            )
-            .await?;
+            upsert_observed_fact(tx, &context, field, json!(value)).await?;
         }
     }
     if !observation.capabilities.is_empty() {
         upsert_observed_fact(
             tx,
-            organization_id,
-            site_id,
-            device_id,
+            &context,
             "capabilities",
             json!(observation.capabilities),
-            "discovery",
-            observed_at,
         )
         .await?;
     }
@@ -1165,13 +1220,9 @@ async fn persist_observed_facts(
 
 async fn upsert_observed_fact(
     tx: &mut Transaction<'_, Postgres>,
-    organization_id: Uuid,
-    site_id: Uuid,
-    device_id: Uuid,
+    context: &ObservedFactContext<'_>,
     field: &str,
     value: Value,
-    source: &str,
-    observed_at: DateTime<Utc>,
 ) -> Result<(), InventoryError> {
     sqlx::query(
         r#"
@@ -1184,13 +1235,13 @@ async fn upsert_observed_fact(
                       observed_at = excluded.observed_at, updated_at = now()
         "#,
     )
-    .bind(organization_id)
-    .bind(site_id)
-    .bind(device_id)
+    .bind(context.organization_id)
+    .bind(context.site_id)
+    .bind(context.device_id)
     .bind(field)
     .bind(value)
-    .bind(source)
-    .bind(observed_at)
+    .bind(context.source)
+    .bind(context.observed_at)
     .execute(&mut **tx)
     .await?;
     Ok(())
@@ -1387,7 +1438,9 @@ fn nested_ref(value: &Option<Option<String>>) -> Option<&str> {
     value.as_ref().and_then(|inner| inner.as_deref())
 }
 
-fn validate_text_fields<'a>(values: impl IntoIterator<Item = Option<&'a str>>) -> Result<(), InventoryError> {
+fn validate_text_fields<'a>(
+    values: impl IntoIterator<Item = Option<&'a str>>,
+) -> Result<(), InventoryError> {
     if values
         .into_iter()
         .flatten()
@@ -1399,12 +1452,15 @@ fn validate_text_fields<'a>(values: impl IntoIterator<Item = Option<&'a str>>) -
 }
 
 fn is_identifier_conflict(error: &sqlx::Error) -> bool {
-    error.as_database_error().and_then(|error| error.constraint()).is_some_and(|constraint| {
-        matches!(
-            constraint,
-            "uq_device_strong_identifier_scope" | "device_identifiers_device_id_kind_value_key"
-        )
-    })
+    error
+        .as_database_error()
+        .and_then(|error| error.constraint())
+        .is_some_and(|constraint| {
+            matches!(
+                constraint,
+                "uq_device_strong_identifier_scope" | "device_identifiers_device_id_kind_value_key"
+            )
+        })
 }
 
 #[derive(Debug, Error)]
@@ -1486,9 +1542,9 @@ mod tests {
         MutationContext {
             organization_id,
             site_id,
-            actor_type: AuditActorType::User,
-            actor_id: Some(Uuid::now_v7()),
-            session_id: Some(Uuid::now_v7()),
+            actor_type: AuditActorType::System,
+            actor_id: None,
+            session_id: None,
             source_ip: Some("127.0.0.1".into()),
             request_id: Uuid::now_v7().to_string(),
             correlation_id: Uuid::now_v7(),
@@ -1642,7 +1698,9 @@ mod tests {
                     },
                 )
                 .await,
-            Err(InventoryError::LifecycleBlocksMutation(DeviceLifecycle::Retired))
+            Err(InventoryError::LifecycleBlocksMutation(
+                DeviceLifecycle::Retired
+            ))
         ));
         assert!(matches!(
             store

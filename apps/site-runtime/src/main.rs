@@ -1,13 +1,13 @@
 use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
+    Json, Router,
     body::Body,
     extract::{Request, State},
     http::{HeaderMap, HeaderName, HeaderValue, StatusCode},
     middleware::{self, Next},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use serde::Serialize;
 use snm_domain::TcpConnectRequest;
@@ -15,7 +15,7 @@ use snm_executor_core::{DefaultNetworkExecutor, NetworkExecutor, NetworkPolicy};
 use snm_observability::{CorrelationContext, TelemetryConfig};
 use subtle::ConstantTimeEq;
 use tower_http::{catch_panic::CatchPanicLayer, timeout::TimeoutLayer, trace::TraceLayer};
-use tracing::{error, info, warn, Instrument};
+use tracing::{Instrument, error, info, warn};
 
 #[derive(Clone)]
 struct AppState {
@@ -48,7 +48,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         env!("CARGO_PKG_VERSION"),
     ))?;
     if let Some(exporter_error) = telemetry.exporter_error() {
-        warn!(error = exporter_error, "OTLP exporter disabled after configuration failure");
+        warn!(
+            error = exporter_error,
+            "OTLP exporter disabled after configuration failure"
+        );
     }
 
     let bind: SocketAddr = env::var("SNM_RUNTIME_BIND")
@@ -110,9 +113,10 @@ async fn correlation_middleware(mut request: Request<Body>, next: Next) -> Respo
         .expect("UUID request ID is always a valid header value");
     let correlation_header = HeaderValue::from_str(&context.correlation_id().to_string())
         .expect("UUID correlation ID is always a valid header value");
-    request
-        .headers_mut()
-        .insert(HeaderName::from_static("x-request-id"), request_header.clone());
+    request.headers_mut().insert(
+        HeaderName::from_static("x-request-id"),
+        request_header.clone(),
+    );
     request.headers_mut().insert(
         HeaderName::from_static("x-correlation-id"),
         correlation_header.clone(),
@@ -181,7 +185,12 @@ async fn tcp_connect(
         capability = "network.tcp.connect",
         transport = "tcp"
     );
-    match state.executor.tcp_connect(request).instrument(transport_span).await {
+    match state
+        .executor
+        .tcp_connect(request)
+        .instrument(transport_span)
+        .await
+    {
         Ok(result) => (StatusCode::OK, Json(result)).into_response(),
         Err(error) => {
             let (status, code) = match error {

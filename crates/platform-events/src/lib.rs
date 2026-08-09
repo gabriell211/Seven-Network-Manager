@@ -449,22 +449,21 @@ impl From<sqlx::Error> for OutboxError {
 
 #[cfg(test)]
 mod tests {
-    use std::sync::atomic::{AtomicUsize, Ordering};
-
     use serde_json::json;
+    use tokio::sync::Mutex;
 
     use super::*;
 
-    struct CountingPublisher {
-        calls: AtomicUsize,
-        fail_first: bool,
+    static TEST_LOCK: Mutex<()> = Mutex::const_new(());
+
+    struct TargetPublisher {
+        fail_event: Uuid,
     }
 
     #[async_trait]
-    impl EventPublisher for CountingPublisher {
-        async fn publish(&self, _event: &OutboxEvent) -> Result<(), PublishError> {
-            let call = self.calls.fetch_add(1, Ordering::SeqCst);
-            if self.fail_first && call == 0 {
+    impl EventPublisher for TargetPublisher {
+        async fn publish(&self, event: &OutboxEvent) -> Result<(), PublishError> {
+            if event.id == self.fail_event {
                 Err(PublishError {
                     code: "fixture_failure".into(),
                 })
@@ -519,15 +518,27 @@ mod tests {
         event
     }
 
+    async fn prioritize_event(pool: &PgPool, event_id: Uuid) {
+        sqlx::query(
+            "UPDATE outbox_events SET available_at = now() - interval '1 day' WHERE id = $1",
+        )
+        .bind(event_id)
+        .execute(pool)
+        .await
+        .unwrap();
+    }
+
     #[tokio::test]
     async fn event_survives_commit_before_publication_and_is_claimed_once() {
+        let _guard = TEST_LOCK.lock().await;
         let Some(pool) = pool().await else { return };
         let organization_id = organization(&pool).await;
         let event = committed_event(&pool, organization_id).await;
+        prioritize_event(&pool, event.id).await;
         let store = OutboxStore::new(pool);
 
         let first = store
-            .claim("worker-a", 10, Duration::from_secs(30))
+            .claim("worker-a", 1, Duration::from_secs(30))
             .await
             .unwrap();
         assert!(first.iter().any(|item| item.id == event.id));
@@ -540,6 +551,7 @@ mod tests {
 
     #[tokio::test]
     async fn consumer_deduplication_is_idempotent() {
+        let _guard = TEST_LOCK.lock().await;
         let Some(pool) = pool().await else { return };
         let store = OutboxStore::new(pool);
         let event_id = Uuid::now_v7();
@@ -565,16 +577,17 @@ mod tests {
 
     #[tokio::test]
     async fn failed_publication_is_retried_without_false_success() {
+        let _guard = TEST_LOCK.lock().await;
         let Some(pool) = pool().await else { return };
         let organization_id = organization(&pool).await;
         let event = committed_event(&pool, organization_id).await;
+        prioritize_event(&pool, event.id).await;
         let store = OutboxStore::new(pool.clone());
-        let publisher = Arc::new(CountingPublisher {
-            calls: AtomicUsize::new(0),
-            fail_first: true,
+        let publisher = Arc::new(TargetPublisher {
+            fail_event: event.id,
         });
         let dispatcher = OutboxDispatcher::new(store, publisher, "worker-retry", 3, 2).unwrap();
-        dispatcher.dispatch_once(10).await.unwrap();
+        dispatcher.dispatch_once(1).await.unwrap();
 
         let row = sqlx::query(
             "SELECT status, (published_at IS NOT NULL) AS published FROM outbox_events WHERE id = $1",

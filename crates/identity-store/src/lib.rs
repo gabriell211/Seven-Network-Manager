@@ -69,7 +69,7 @@ impl ServiceAccountStore {
         .bind(name)
         .fetch_one(&self.pool)
         .await?;
-        Ok(row_to_account(row)?)
+        row_to_account(row)
     }
 
     pub async fn disable_account(
