@@ -80,7 +80,9 @@ impl ScopedIpTarget {
         }
 
         if let IpAddr::V6(ip) = self.address {
-            if ip.is_unicast_link_local() && self.interface_scope.as_deref().unwrap_or("").is_empty() {
+            if ip.is_unicast_link_local()
+                && self.interface_scope.as_deref().unwrap_or("").is_empty()
+            {
                 return Err(DomainError::MissingIpv6LinkLocalScope);
             }
         }
