@@ -2,6 +2,7 @@ mod auth;
 mod authorization;
 mod db;
 mod inventory_api;
+mod redis_state;
 
 use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
@@ -18,6 +19,7 @@ use axum::{
     routing::{get, post},
 };
 use db::Database;
+use redis_state::RedisState;
 use serde::Serialize;
 use snm_inventory_store::InventoryStore;
 use snm_observability::{CorrelationContext, TelemetryConfig};
@@ -28,6 +30,7 @@ use tracing::{Instrument, error, info, warn};
 struct AppState {
     runtime: Arc<dyn RuntimePort>,
     database: Database,
+    redis: RedisState,
     auth: Arc<AuthService>,
     authorization: Arc<AuthorizationService>,
     inventory: InventoryStore,
@@ -55,6 +58,7 @@ struct HealthResponse {
 struct ReadinessResponse {
     status: &'static str,
     database: &'static str,
+    redis: &'static str,
     runtime: &'static str,
     applied_migrations: i64,
 }
@@ -130,6 +134,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let runtime_url =
         env::var("SNM_RUNTIME_URL").unwrap_or_else(|_| "http://127.0.0.1:9765".to_owned());
     let database_url = env::var("DATABASE_URL")?;
+    let redis_url = env::var("REDIS_URL")?;
     let max_connections = env::var("SNM_DATABASE_MAX_CONNECTIONS")
         .ok()
         .and_then(|value| value.parse::<u32>().ok())
@@ -140,6 +145,9 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         database.migrate().await?;
         info!("database migrations applied");
     }
+    let redis = RedisState::connect(&redis_url).await?;
+    redis.health().await?;
+    info!("redis coordination dependency ready");
     maybe_bootstrap_scope(&database).await?;
 
     let auth = Arc::new(AuthService::from_env(database.clone())?);
@@ -151,6 +159,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let state = AppState {
         runtime: Arc::new(HttpRuntimeClient::new(runtime_url)?),
         database,
+        redis,
         auth,
         authorization,
         inventory,
@@ -288,7 +297,16 @@ async fn health() -> Json<HealthResponse> {
 
 async fn ready(State(state): State<AppState>) -> Response {
     let runtime = state.runtime.health().await;
-    let database = match state.database.health().await {
+    let redis = state.redis.health().await;
+    let database = state.database.health().await;
+
+    let runtime_status = match runtime {
+        RuntimeHealth::Ready => "ready",
+        RuntimeHealth::Unavailable => "unavailable",
+    };
+    let redis_status = if redis.is_ok() { "ready" } else { "unavailable" };
+
+    let database = match database {
         Ok(health) => health,
         Err(error) => {
             warn!(error = %error, "database readiness failed");
@@ -297,10 +315,8 @@ async fn ready(State(state): State<AppState>) -> Response {
                 Json(ReadinessResponse {
                     status: "not_ready",
                     database: "unavailable",
-                    runtime: match runtime {
-                        RuntimeHealth::Ready => "ready",
-                        RuntimeHealth::Unavailable => "unavailable",
-                    },
+                    redis: redis_status,
+                    runtime: runtime_status,
                     applied_migrations: 0,
                 }),
             )
@@ -308,16 +324,31 @@ async fn ready(State(state): State<AppState>) -> Response {
         }
     };
 
-    let (status, runtime_status) = match runtime {
-        RuntimeHealth::Ready => ("ready", "ready"),
-        RuntimeHealth::Unavailable => ("degraded", "unavailable"),
-    };
+    if let Err(error) = redis {
+        warn!(error = %error, "redis readiness failed");
+        return (
+            StatusCode::SERVICE_UNAVAILABLE,
+            Json(ReadinessResponse {
+                status: "not_ready",
+                database: "ready",
+                redis: "unavailable",
+                runtime: runtime_status,
+                applied_migrations: database.migration_count,
+            }),
+        )
+            .into_response();
+    }
 
+    let status = match runtime {
+        RuntimeHealth::Ready => "ready",
+        RuntimeHealth::Unavailable => "degraded",
+    };
     (
         StatusCode::OK,
         Json(ReadinessResponse {
             status,
             database: "ready",
+            redis: "ready",
             runtime: runtime_status,
             applied_migrations: database.migration_count,
         }),
