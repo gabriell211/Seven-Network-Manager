@@ -1,0 +1,21 @@
+services:
+  site-runtime:
+    # L2/ARP discovery needs the host network namespace. This override is Linux
+    # laboratory/deployment mode only; the base profile remains bridge-isolated.
+    network_mode: host
+    networks: !reset []
+    environment:
+      SNM_RUNTIME_BIND: 0.0.0.0:9765
+      SNM_RUNTIME_ALLOW_NON_LOOPBACK: "true"
+    cap_add:
+      - NET_RAW
+    cap_drop:
+      - ALL
+
+  backend:
+    # The backend remains bridge-isolated and never receives NET_RAW or host
+    # networking. It reaches only the authenticated runtime endpoint on host.
+    environment:
+      SNM_RUNTIME_URL: http://host.docker.internal:9765
+    extra_hosts:
+      - host.docker.internal:host-gateway
