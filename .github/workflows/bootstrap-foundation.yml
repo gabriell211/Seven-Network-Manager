@@ -16,7 +16,7 @@ jobs:
     timeout-minutes: 30
     steps:
       - name: Checkout staged branch
-        uses: actions/checkout@v4
+        uses: actions/checkout@v6
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
@@ -30,10 +30,30 @@ jobs:
           echo 'e7f12cd999ef400b00c3b13b9324bc353db252f5bca6a189fd55d37d83fe1eda  /tmp/snm-project.tar.gz' | sha256sum --check --strict
           tar -xzf /tmp/snm-project.tar.gz -C "$GITHUB_WORKSPACE"
 
+          rm -f .npmrc
+          cat > pnpm-workspace.yaml <<'EOF'
+          packages:
+            - apps/frontend
+            - packages/*
+
+          engineStrict: true
+          strictPeerDependencies: true
+          preferFrozenLockfile: true
+          sharedWorkspaceLockfile: true
+          strictDepBuilds: true
+          blockExoticSubdeps: true
+          allowBuilds:
+            sharp: true
+            unrs-resolver: true
+          EOF
+
+          sed -i 's#actions/checkout@v4#actions/checkout@v6#g; s#actions/setup-node@v4#actions/setup-node@v6#g' .github/workflows/ci.yml
+
       - name: Setup Node
-        uses: actions/setup-node@v4
+        uses: actions/setup-node@v6
         with:
           node-version-file: .node-version
+          package-manager-cache: false
 
       - name: Activate pinned pnpm
         shell: bash
