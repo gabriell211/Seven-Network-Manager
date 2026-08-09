@@ -21,6 +21,70 @@ impl DeviceLifecycle {
     pub fn allows_normal_mutation(self) -> bool {
         matches!(self, Self::Managed | Self::Maintenance)
     }
+
+    pub fn can_transition_to(self, next: Self) -> bool {
+        if self == next {
+            return true;
+        }
+        matches!(
+            (self, next),
+            (Self::Discovered, Self::PendingReview)
+                | (Self::Discovered, Self::Unmanaged)
+                | (Self::Discovered, Self::Archived)
+                | (Self::PendingReview, Self::Managed)
+                | (Self::PendingReview, Self::Unmanaged)
+                | (Self::PendingReview, Self::Archived)
+                | (Self::Managed, Self::Maintenance)
+                | (Self::Managed, Self::Unmanaged)
+                | (Self::Managed, Self::Retired)
+                | (Self::Unmanaged, Self::PendingReview)
+                | (Self::Unmanaged, Self::Managed)
+                | (Self::Unmanaged, Self::Retired)
+                | (Self::Unmanaged, Self::Archived)
+                | (Self::Maintenance, Self::Managed)
+                | (Self::Maintenance, Self::Retired)
+                | (Self::Retired, Self::PendingReview)
+                | (Self::Retired, Self::Archived)
+        )
+    }
+
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Discovered => "discovered",
+            Self::PendingReview => "pending_review",
+            Self::Managed => "managed",
+            Self::Unmanaged => "unmanaged",
+            Self::Maintenance => "maintenance",
+            Self::Retired => "retired",
+            Self::Archived => "archived",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum DeviceType {
+    Switch,
+    Router,
+    Firewall,
+    Server,
+    Printer,
+    AccessPoint,
+    Unknown,
+}
+
+impl DeviceType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Switch => "switch",
+            Self::Router => "router",
+            Self::Firewall => "firewall",
+            Self::Server => "server",
+            Self::Printer => "printer",
+            Self::AccessPoint => "access_point",
+            Self::Unknown => "unknown",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Serialize, Deserialize)]
@@ -44,6 +108,22 @@ impl<T> Evidence<T> {
     }
 }
 
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
+pub enum IdentifierStrength {
+    Strong,
+    Weak,
+}
+
+impl IdentifierStrength {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Strong => "strong",
+            Self::Weak => "weak",
+        }
+    }
+}
+
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum IdentifierKind {
@@ -53,6 +133,50 @@ pub enum IdentifierKind {
     SnmpEngineId,
     ProviderNativeId,
     AssetTag,
+}
+
+impl IdentifierKind {
+    pub fn as_str(&self) -> &'static str {
+        match self {
+            Self::Serial => "serial",
+            Self::Mac => "mac",
+            Self::Hostname => "hostname",
+            Self::SnmpEngineId => "snmp_engine_id",
+            Self::ProviderNativeId => "provider_native_id",
+            Self::AssetTag => "asset_tag",
+        }
+    }
+
+    pub fn strength(&self) -> IdentifierStrength {
+        match self {
+            Self::Serial | Self::Mac | Self::SnmpEngineId | Self::ProviderNativeId => {
+                IdentifierStrength::Strong
+            }
+            Self::Hostname | Self::AssetTag => IdentifierStrength::Weak,
+        }
+    }
+
+    pub fn normalize(&self, value: &str) -> Result<String, &'static str> {
+        let value = value.trim();
+        if value.is_empty() {
+            return Err("identifier value is required");
+        }
+
+        let normalized = match self {
+            Self::Mac | Self::SnmpEngineId => value
+                .chars()
+                .filter(|character| character.is_ascii_hexdigit())
+                .map(|character| character.to_ascii_lowercase())
+                .collect(),
+            Self::Hostname => value.trim_end_matches('.').to_ascii_lowercase(),
+            Self::Serial | Self::ProviderNativeId | Self::AssetTag => value.to_ascii_lowercase(),
+        };
+
+        if normalized.is_empty() {
+            return Err("identifier value is invalid after normalization");
+        }
+        Ok(normalized)
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, PartialOrd, Ord, Serialize, Deserialize)]
@@ -168,5 +292,36 @@ mod tests {
             decide_merge(&left, &right),
             MergeDecision::DifferentResource
         );
+    }
+
+    #[test]
+    fn identifier_normalization_is_stable_across_common_formats() {
+        assert_eq!(
+            IdentifierKind::Mac.normalize("AA:BB:CC:00:11:22").unwrap(),
+            "aabbcc001122"
+        );
+        assert_eq!(
+            IdentifierKind::Mac.normalize("aa-bb-cc-00-11-22").unwrap(),
+            "aabbcc001122"
+        );
+        assert_eq!(
+            IdentifierKind::Hostname.normalize("SW-CORE.EXAMPLE.").unwrap(),
+            "sw-core.example"
+        );
+        assert_eq!(IdentifierKind::Serial.strength(), IdentifierStrength::Strong);
+        assert_eq!(IdentifierKind::Hostname.strength(), IdentifierStrength::Weak);
+    }
+
+    #[test]
+    fn retired_device_requires_review_before_reactivation() {
+        assert!(DeviceLifecycle::Retired.can_transition_to(DeviceLifecycle::PendingReview));
+        assert!(!DeviceLifecycle::Retired.can_transition_to(DeviceLifecycle::Managed));
+    }
+
+    #[test]
+    fn discovery_cannot_skip_review_and_become_managed() {
+        assert!(!DeviceLifecycle::Discovered.can_transition_to(DeviceLifecycle::Managed));
+        assert!(DeviceLifecycle::Discovered.can_transition_to(DeviceLifecycle::PendingReview));
+        assert!(DeviceLifecycle::PendingReview.can_transition_to(DeviceLifecycle::Managed));
     }
 }
