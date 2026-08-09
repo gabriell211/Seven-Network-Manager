@@ -166,15 +166,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+fn non_empty_env(name: &str) -> Option<String> {
+    env::var(name).ok().filter(|value| !value.trim().is_empty())
+}
+
 async fn maybe_bootstrap_scope(database: &Database) -> Result<(), sqlx::Error> {
-    let Ok(organization_slug) = env::var("SNM_BOOTSTRAP_ORG_SLUG") else {
+    let Some(organization_slug) = non_empty_env("SNM_BOOTSTRAP_ORG_SLUG") else {
         return Ok(());
     };
-    let organization_name =
-        env::var("SNM_BOOTSTRAP_ORG_NAME").unwrap_or_else(|_| "Seven Network Manager".to_owned());
-    let site_slug = env::var("SNM_BOOTSTRAP_SITE_SLUG").unwrap_or_else(|_| "default".to_owned());
+    let organization_name = non_empty_env("SNM_BOOTSTRAP_ORG_NAME")
+        .unwrap_or_else(|| "Seven Network Manager".to_owned());
+    let site_slug =
+        non_empty_env("SNM_BOOTSTRAP_SITE_SLUG").unwrap_or_else(|| "default".to_owned());
     let site_name =
-        env::var("SNM_BOOTSTRAP_SITE_NAME").unwrap_or_else(|_| "Default Site".to_owned());
+        non_empty_env("SNM_BOOTSTRAP_SITE_NAME").unwrap_or_else(|| "Default Site".to_owned());
     let (organization_id, site_id, routing_domain_id) = database
         .bootstrap_scope(
             &organization_slug,
@@ -188,13 +193,15 @@ async fn maybe_bootstrap_scope(database: &Database) -> Result<(), sqlx::Error> {
 }
 
 async fn maybe_bootstrap_admin(auth: &AuthService) -> Result<(), Box<dyn std::error::Error>> {
-    let Ok(email) = env::var("SNM_BOOTSTRAP_ADMIN_EMAIL") else {
+    let Some(email) = non_empty_env("SNM_BOOTSTRAP_ADMIN_EMAIL") else {
         return Ok(());
     };
-    let organization_slug = env::var("SNM_BOOTSTRAP_ORG_SLUG")?;
-    let password = env::var("SNM_BOOTSTRAP_ADMIN_PASSWORD")?;
-    let display_name =
-        env::var("SNM_BOOTSTRAP_ADMIN_NAME").unwrap_or_else(|_| "SNM Administrator".to_owned());
+    let organization_slug = non_empty_env("SNM_BOOTSTRAP_ORG_SLUG")
+        .ok_or("SNM_BOOTSTRAP_ORG_SLUG is required when bootstrapping an administrator")?;
+    let password = non_empty_env("SNM_BOOTSTRAP_ADMIN_PASSWORD")
+        .ok_or("SNM_BOOTSTRAP_ADMIN_PASSWORD is required when bootstrapping an administrator")?;
+    let display_name = non_empty_env("SNM_BOOTSTRAP_ADMIN_NAME")
+        .unwrap_or_else(|| "SNM Administrator".to_owned());
     auth.bootstrap_admin(
         &organization_slug,
         &email,
