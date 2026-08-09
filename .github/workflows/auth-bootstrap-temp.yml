@@ -1,19 +1,16 @@
 name: Temporary auth bootstrap
 
 on:
-  push:
-    branches: [agent/foundation-c0-c1]
-    paths:
-      - 'apps/backend/**'
-      - 'crates/security/**'
-      - 'migrations/**'
-      - '.github/workflows/auth-bootstrap-temp.yml'
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
 
 permissions:
   contents: write
 
 jobs:
   validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository
     runs-on: ubuntu-latest
     timeout-minutes: 30
     services:
@@ -35,7 +32,7 @@ jobs:
     steps:
       - uses: actions/checkout@v6
         with:
-          ref: agent/foundation-c0-c1
+          ref: ${{ github.head_ref }}
           fetch-depth: 0
       - name: Keep auth error type usable by parent module
         run: sed -i 's/^enum AuthError/pub(crate) enum AuthError/' apps/backend/src/auth.rs
@@ -57,4 +54,4 @@ jobs:
             exit 0
           fi
           git commit -m 'style: validate persistent auth integration'
-          git push origin HEAD:agent/foundation-c0-c1
+          git push origin HEAD:${{ github.head_ref }}
