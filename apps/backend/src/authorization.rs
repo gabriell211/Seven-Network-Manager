@@ -45,18 +45,27 @@ impl AuthorizationService {
     pub(crate) fn from_env(database: Database) -> Result<Self, AuthorizationInitError> {
         let signing_secret = env::var("SNM_ACCESS_TOKEN_KEY")
             .map_err(|_| AuthorizationInitError::MissingOrWeakAccessTokenKey)?;
+        let issuer = env::var("SNM_AUTH_ISSUER").unwrap_or_else(|_| "snm".to_owned());
+        let audience = env::var("SNM_AUTH_AUDIENCE").unwrap_or_else(|_| "snm-api".to_owned());
+        Self::new(database, signing_secret.as_bytes(), issuer, audience)
+    }
+
+    fn new(
+        database: Database,
+        signing_secret: &[u8],
+        issuer: impl Into<Arc<str>>,
+        audience: impl Into<Arc<str>>,
+    ) -> Result<Self, AuthorizationInitError> {
         if signing_secret.len() < 32 {
             return Err(AuthorizationInitError::MissingOrWeakAccessTokenKey);
         }
-        let access_key = AccessTokenKey::new(signing_secret.into_bytes())
+        let access_key = AccessTokenKey::new(signing_secret.to_vec())
             .map_err(|_| AuthorizationInitError::SigningKey)?;
         Ok(Self {
             database,
             access_key,
-            issuer: Arc::from(env::var("SNM_AUTH_ISSUER").unwrap_or_else(|_| "snm".to_owned())),
-            audience: Arc::from(
-                env::var("SNM_AUTH_AUDIENCE").unwrap_or_else(|_| "snm-api".to_owned()),
-            ),
+            issuer: issuer.into(),
+            audience: audience.into(),
         })
     }
 
@@ -179,11 +188,17 @@ mod tests {
 
     use super::*;
 
+    const TEST_KEY: &[u8] = b"0123456789abcdef0123456789abcdef0123456789abcdef";
+
     async fn database() -> Option<Database> {
         let url = std::env::var("DATABASE_URL").ok()?;
         let database = Database::connect(&url, 8).await.ok()?;
         database.migrate().await.ok()?;
         Some(database)
+    }
+
+    fn service(database: Database) -> AuthorizationService {
+        AuthorizationService::new(database, TEST_KEY, "snm", "snm-api").unwrap()
     }
 
     async fn fixture(database: &Database) -> (Uuid, Uuid, Uuid, Uuid, Uuid) {
@@ -285,7 +300,7 @@ mod tests {
             user_id,
             organization_id,
         };
-        let service = AuthorizationService::from_env(database).unwrap();
+        let service = service(database);
         assert!(service.require_site_permission(&principal, site_a, &permission).await.is_ok());
         assert!(matches!(
             service.require_site_permission(&principal, site_b, &permission).await,
@@ -297,12 +312,11 @@ mod tests {
     async fn revoked_session_is_rejected_even_with_valid_signature() {
         let Some(database) = database().await else { return };
         let (organization_id, _site_a, _site_b, user_id, session_id) = fixture(&database).await;
-        let secret = std::env::var("SNM_ACCESS_TOKEN_KEY").unwrap();
-        let key = AccessTokenKey::new(secret.into_bytes()).unwrap();
+        let key = AccessTokenKey::new(TEST_KEY.to_vec()).unwrap();
         let now = Utc::now();
         let claims = AccessClaims {
-            iss: std::env::var("SNM_AUTH_ISSUER").unwrap_or_else(|_| "snm".into()),
-            aud: std::env::var("SNM_AUTH_AUDIENCE").unwrap_or_else(|_| "snm-api".into()),
+            iss: "snm".into(),
+            aud: "snm-api".into(),
             sub: user_id,
             org: organization_id,
             sid: session_id,
@@ -323,7 +337,7 @@ mod tests {
             header::AUTHORIZATION,
             format!("Bearer {token}").parse().unwrap(),
         );
-        let service = AuthorizationService::from_env(database).unwrap();
+        let service = service(database);
         assert!(matches!(
             service.authenticate(&headers).await,
             Err(AuthorizationError::InvalidSession)
