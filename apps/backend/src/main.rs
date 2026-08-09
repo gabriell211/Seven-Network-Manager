@@ -1,3 +1,5 @@
+mod db;
+
 use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
@@ -8,6 +10,7 @@ use axum::{
     response::{IntoResponse, Response},
     routing::get,
 };
+use db::Database;
 use serde::Serialize;
 use tower_http::{
     catch_panic::CatchPanicLayer,
@@ -15,12 +18,13 @@ use tower_http::{
     timeout::TimeoutLayer,
     trace::TraceLayer,
 };
-use tracing::{error, info};
+use tracing::{error, info, warn};
 use tracing_subscriber::EnvFilter;
 
 #[derive(Clone)]
 struct AppState {
     runtime: Arc<dyn RuntimePort>,
+    database: Database,
 }
 
 #[derive(Debug, Serialize)]
@@ -43,7 +47,9 @@ struct HealthResponse {
 #[serde(rename_all = "camelCase")]
 struct ReadinessResponse {
     status: &'static str,
+    database: &'static str,
     runtime: &'static str,
+    applied_migrations: i64,
 }
 
 #[derive(Debug, Serialize)]
@@ -107,9 +113,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()?;
     let runtime_url =
         env::var("SNM_RUNTIME_URL").unwrap_or_else(|_| "http://127.0.0.1:9765".to_owned());
+    let database_url = env::var("DATABASE_URL")?;
+    let max_connections = env::var("SNM_DATABASE_MAX_CONNECTIONS")
+        .ok()
+        .and_then(|value| value.parse::<u32>().ok())
+        .unwrap_or(10);
+
+    let database = Database::connect(&database_url, max_connections).await?;
+    if env_flag("SNM_RUN_MIGRATIONS") {
+        database.migrate().await?;
+        info!("database migrations applied");
+    }
+    maybe_bootstrap_scope(&database).await?;
 
     let state = AppState {
         runtime: Arc::new(HttpRuntimeClient::new(runtime_url)?),
+        database,
     };
 
     let request_id_header = HeaderName::from_static("x-request-id");
@@ -136,6 +155,26 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     Ok(())
 }
 
+async fn maybe_bootstrap_scope(database: &Database) -> Result<(), sqlx::Error> {
+    let Ok(organization_slug) = env::var("SNM_BOOTSTRAP_ORG_SLUG") else {
+        return Ok(());
+    };
+    let organization_name = env::var("SNM_BOOTSTRAP_ORG_NAME")
+        .unwrap_or_else(|_| "Seven Network Manager".to_owned());
+    let site_slug = env::var("SNM_BOOTSTRAP_SITE_SLUG").unwrap_or_else(|_| "default".to_owned());
+    let site_name = env::var("SNM_BOOTSTRAP_SITE_NAME").unwrap_or_else(|_| "Default Site".to_owned());
+    let (organization_id, site_id, routing_domain_id) = database
+        .bootstrap_scope(
+            &organization_slug,
+            &organization_name,
+            &site_slug,
+            &site_name,
+        )
+        .await?;
+    info!(%organization_id, %site_id, %routing_domain_id, "bootstrap scope ready");
+    Ok(())
+}
+
 async fn health() -> Json<HealthResponse> {
     Json(HealthResponse {
         status: "ok",
@@ -146,20 +185,43 @@ async fn health() -> Json<HealthResponse> {
 
 async fn ready(State(state): State<AppState>) -> Response {
     let runtime = state.runtime.health().await;
-    let body = match runtime {
-        RuntimeHealth::Ready => ReadinessResponse {
-            status: "ready",
-            runtime: "ready",
-        },
-        RuntimeHealth::Unavailable => ReadinessResponse {
-            status: "degraded",
-            runtime: "unavailable",
-        },
+    let database = match state.database.health().await {
+        Ok(health) => health,
+        Err(error) => {
+            warn!(error = %error, "database readiness failed");
+            return (
+                StatusCode::SERVICE_UNAVAILABLE,
+                Json(ReadinessResponse {
+                    status: "not_ready",
+                    database: "unavailable",
+                    runtime: match runtime {
+                        RuntimeHealth::Ready => "ready",
+                        RuntimeHealth::Unavailable => "unavailable",
+                    },
+                    applied_migrations: 0,
+                }),
+            )
+                .into_response();
+        }
     };
 
-    // Runtime availability is reported separately. The control-plane remains
-    // alive and observable instead of falling back to direct LAN execution.
-    (StatusCode::OK, Json(body)).into_response()
+    let (status, runtime_status) = match runtime {
+        RuntimeHealth::Ready => ("ready", "ready"),
+        RuntimeHealth::Unavailable => ("degraded", "unavailable"),
+    };
+
+    // Runtime availability is reported separately. The control-plane stays
+    // observable and never falls back to direct LAN execution.
+    (
+        StatusCode::OK,
+        Json(ReadinessResponse {
+            status,
+            database: "ready",
+            runtime: runtime_status,
+            applied_migrations: database.migration_count,
+        }),
+    )
+        .into_response()
 }
 
 async fn system(headers: HeaderMap) -> Response {
@@ -181,6 +243,12 @@ async fn system(headers: HeaderMap) -> Response {
         deployment_mode: "production-mvp-onprem",
     })
     .into_response()
+}
+
+fn env_flag(name: &str) -> bool {
+    env::var(name)
+        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
+        .unwrap_or(false)
 }
 
 fn init_tracing() {
