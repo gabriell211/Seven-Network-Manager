@@ -2283,8 +2283,7 @@
       "hardDependencies": [
         34,
         39,
-        40,
-        70
+        40
       ],
       "integrations": [],
       "scalingIntegrations": [],
