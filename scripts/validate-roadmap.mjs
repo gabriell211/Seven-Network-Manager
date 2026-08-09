@@ -1,7 +1,7 @@
 import { readFileSync } from "node:fs";
 
 const roadmap = readFileSync(new URL("../docs/roadmap.yaml", import.meta.url), "utf8");
-const required = ["C0", "C1", "RELEASE_TRIAL", "119", "Trial nao contorna RBAC"];
+const required = ["C0", "C1", "C2", "C3", "RELEASE_TRIAL", "119", "Trial nao contorna RBAC"];
 
 const missing = required.filter((token) => !roadmap.includes(token));
 

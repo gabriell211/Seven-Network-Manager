@@ -21,6 +21,24 @@ paths:
       responses:
         "200":
           description: Capability list envelope
+  /api/v1/inventory/devices:
+    get:
+      summary: List managed and discovered devices
+      responses:
+        "200":
+          description: Device list envelope
+  /api/v1/discovery/runs:
+    get:
+      summary: List discovery runs
+      responses:
+        "200":
+          description: Discovery run list envelope
+  /api/v1/alerts:
+    get:
+      summary: List current operational alerts
+      responses:
+        "200":
+          description: Alert list envelope
   /api/v1/trial/status:
     get:
       summary: Current local trial status

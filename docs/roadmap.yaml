@@ -8,6 +8,12 @@ roadmap:
     C1:
       name: Plataforma, seguranca e runtime de execucao
       issues: [6, 10, 11, 12, 13, 14, 15, 57, 117, 86, 97]
+    C2:
+      name: Inventario, IPAM e discovery
+      issues: [16, 84, 58, 17, 18, 87]
+    C3:
+      name: SNMP, telemetria e operacao observavel
+      issues: [19, 20, 21, 22, 23, 24, 25, 60, 61, 26, 30]
     RELEASE_TRIAL:
       name: Trial controlado, piloto e validacao comercial
       issues: [119]
