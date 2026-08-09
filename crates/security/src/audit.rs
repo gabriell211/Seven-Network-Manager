@@ -8,6 +8,24 @@ use snm_domain::governance::redact_value;
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
+pub enum AuditActorType {
+    User,
+    ServiceAccount,
+    System,
+}
+
+impl AuditActorType {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::User => "user",
+            Self::ServiceAccount => "service_account",
+            Self::System => "system",
+        }
+    }
+}
+
+#[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
+#[serde(rename_all = "snake_case")]
 pub enum AuditStatus {
     Succeeded,
     Failed,
@@ -22,10 +40,12 @@ pub enum AuditStatus {
 pub struct AuditEventDraft {
     pub organization_id: Uuid,
     pub site_id: Option<Uuid>,
+    pub actor_type: AuditActorType,
     pub actor_id: Option<Uuid>,
     pub session_id: Option<Uuid>,
     pub source_ip: Option<String>,
     pub request_id: String,
+    pub correlation_id: Uuid,
     pub action: String,
     pub resource_type: String,
     pub resource_id: Option<String>,
@@ -115,10 +135,12 @@ mod tests {
         AuditEventDraft {
             organization_id: Uuid::now_v7(),
             site_id: None,
+            actor_type: AuditActorType::User,
             actor_id: Some(Uuid::now_v7()),
             session_id: Some(Uuid::now_v7()),
             source_ip: Some("127.0.0.1".into()),
             request_id: "req-1".into(),
+            correlation_id: Uuid::now_v7(),
             action: "credentials.update".into(),
             resource_type: "credential_profile".into(),
             resource_id: Some("cred-1".into()),
@@ -150,5 +172,17 @@ mod tests {
         let mut second = draft().seal(Some(first.event_hash)).unwrap();
         second.event.action = "tampered.action".into();
         assert!(!second.verify().unwrap());
+    }
+
+    #[test]
+    fn actor_and_correlation_are_cryptographically_bound() {
+        let sealed = draft().seal(None).unwrap();
+        let mut actor_tampered = sealed.clone();
+        actor_tampered.event.actor_type = AuditActorType::System;
+        assert!(!actor_tampered.verify().unwrap());
+
+        let mut correlation_tampered = sealed;
+        correlation_tampered.event.correlation_id = Uuid::now_v7();
+        assert!(!correlation_tampered.verify().unwrap());
     }
 }
