@@ -34,7 +34,7 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-      - name: Repair inventory store test principals
+      - name: Repair inventory validation fixtures and search normalization
         shell: bash
         run: |
           set -euo pipefail
@@ -42,30 +42,44 @@ jobs:
           import re
           from pathlib import Path
 
-          paths = [
+          principal_paths = [
               Path('crates/inventory-store/src/lib.rs'),
               Path('crates/inventory-store/tests/search.rs'),
           ]
-          pattern = re.compile(
+          principal_pattern = re.compile(
               r'(?m)^(?P<indent>\s*)actor_type: AuditActorType::User,\n'
               r'(?P=indent)actor_id: Some\(Uuid::now_v7\(\)\),\n'
               r'(?P=indent)session_id: Some\(Uuid::now_v7\(\)\),'
           )
-          for path in paths:
+          for path in principal_paths:
               text = path.read_text()
-              def replacement(match: re.Match[str]) -> str:
+              def principal_replacement(match: re.Match[str]) -> str:
                   indent = match.group('indent')
                   return (
                       f'{indent}actor_type: AuditActorType::System,\n'
                       f'{indent}actor_id: None,\n'
                       f'{indent}session_id: None,'
                   )
-              updated, count = pattern.subn(replacement, text)
+              updated, count = principal_pattern.subn(principal_replacement, text)
               if count != 1:
                   raise SystemExit(
                       f'{path}: expected exactly one inventory test principal block, found {count}'
                   )
               path.write_text(updated)
+
+          inventory_store = Path('crates/inventory-store/src/lib.rs')
+          text = inventory_store.read_text()
+          old = '                builder.push(" OR di.normalized_value LIKE ");'
+          new = (
+              '                builder.push(\n'
+              '                    " OR regexp_replace(di.normalized_value, \'[^a-z0-9]\', \'\', \'g\') LIKE ",\n'
+              '                );'
+          )
+          if text.count(old) != 1:
+              raise SystemExit(
+                  f'{inventory_store}: expected exactly one normalized identifier search clause'
+              )
+          inventory_store.write_text(text.replace(old, new, 1))
           PY
       - name: Resolve canonical Cargo graph
         run: cargo generate-lockfile
