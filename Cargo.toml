@@ -6,6 +6,7 @@ members = [
   "crates/domain",
   "crates/executor-core",
   "crates/identity-store",
+  "crates/inventory-store",
   "crates/observability",
   "crates/platform-events",
   "crates/security",
