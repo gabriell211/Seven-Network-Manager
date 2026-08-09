@@ -34,6 +34,7 @@ ALTER TABLE device_identifiers
   ADD COLUMN organization_id uuid,
   ADD COLUMN site_id uuid,
   ADD COLUMN normalized_value text,
+  ADD COLUMN identity_namespace text,
   ADD COLUMN strength text NOT NULL DEFAULT 'weak'
     CHECK (strength IN ('strong', 'weak')),
   ADD COLUMN last_seen_at timestamptz;
@@ -48,6 +49,10 @@ SET organization_id = device.organization_id,
         THEN regexp_replace(lower(trim(identifier.value)), '\.$', '')
       ELSE lower(trim(identifier.value))
     END,
+    identity_namespace = CASE
+      WHEN identifier.kind = 'provider_native_id' THEN lower(trim(identifier.source))
+      ELSE 'global'
+    END,
     strength = CASE
       WHEN identifier.kind IN ('serial', 'mac', 'snmp_engine_id', 'provider_native_id')
         THEN 'strong'
@@ -60,7 +65,8 @@ WHERE device.id = identifier.device_id;
 ALTER TABLE device_identifiers
   ALTER COLUMN organization_id SET NOT NULL,
   ALTER COLUMN site_id SET NOT NULL,
-  ALTER COLUMN normalized_value SET NOT NULL;
+  ALTER COLUMN normalized_value SET NOT NULL,
+  ALTER COLUMN identity_namespace SET NOT NULL;
 
 ALTER TABLE device_identifiers
   ADD CONSTRAINT device_identifiers_scope_fk
@@ -69,10 +75,14 @@ ALTER TABLE device_identifiers
   ON DELETE CASCADE;
 
 CREATE UNIQUE INDEX uq_device_strong_identifier_scope
-  ON device_identifiers (organization_id, site_id, kind, source, normalized_value)
+  ON device_identifiers (
+    organization_id, site_id, kind, identity_namespace, normalized_value
+  )
   WHERE strength = 'strong';
 CREATE INDEX idx_device_identifiers_normalized_lookup
-  ON device_identifiers (organization_id, site_id, kind, normalized_value);
+  ON device_identifiers (
+    organization_id, site_id, kind, identity_namespace, normalized_value
+  );
 
 CREATE TABLE device_facts (
   id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
