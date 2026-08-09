@@ -32,7 +32,10 @@ pub struct DatasetPolicy {
 
 impl DatasetPolicy {
     pub fn validate(&self) -> Result<(), &'static str> {
-        if self.dataset.trim().is_empty() || self.owner.trim().is_empty() || self.purpose.trim().is_empty() {
+        if self.dataset.trim().is_empty()
+            || self.owner.trim().is_empty()
+            || self.purpose.trim().is_empty()
+        {
             return Err("dataset, owner and purpose are required");
         }
         if self.retention_days == 0 && self.purge_strategy != PurgeStrategy::AppendOnlyPolicy {

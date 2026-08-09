@@ -85,7 +85,12 @@ impl TrialLicense {
         TrialState::Active
     }
 
-    pub fn decide(&self, action: TrialAction, usage: TrialUsage, now_unix_ms: i64) -> TrialDecision {
+    pub fn decide(
+        &self,
+        action: TrialAction,
+        usage: TrialUsage,
+        now_unix_ms: i64,
+    ) -> TrialDecision {
         if self.effective_state(now_unix_ms, 0) == TrialState::Converted {
             return TrialDecision::Allow;
         }
@@ -98,22 +103,46 @@ impl TrialLicense {
         }
         match action {
             TrialAction::Read => {
-                if self.policy.allow_read_capabilities { TrialDecision::Allow } else { TrialDecision::DenyPolicy }
+                if self.policy.allow_read_capabilities {
+                    TrialDecision::Allow
+                } else {
+                    TrialDecision::DenyPolicy
+                }
             }
             TrialAction::LowRiskMutation => {
-                if self.policy.allow_low_risk_mutations { TrialDecision::Allow } else { TrialDecision::DenyPolicy }
+                if self.policy.allow_low_risk_mutations {
+                    TrialDecision::Allow
+                } else {
+                    TrialDecision::DenyPolicy
+                }
             }
             TrialAction::CriticalMutation => {
-                if self.policy.allow_critical_mutations { TrialDecision::Allow } else { TrialDecision::DenyPolicy }
+                if self.policy.allow_critical_mutations {
+                    TrialDecision::Allow
+                } else {
+                    TrialDecision::DenyPolicy
+                }
             }
             TrialAction::CreateDevice => {
-                if usage.devices < self.policy.max_devices { TrialDecision::Allow } else { TrialDecision::DenyLimit }
+                if usage.devices < self.policy.max_devices {
+                    TrialDecision::Allow
+                } else {
+                    TrialDecision::DenyLimit
+                }
             }
             TrialAction::CreateSite => {
-                if usage.sites < self.policy.max_sites { TrialDecision::Allow } else { TrialDecision::DenyLimit }
+                if usage.sites < self.policy.max_sites {
+                    TrialDecision::Allow
+                } else {
+                    TrialDecision::DenyLimit
+                }
             }
             TrialAction::CreateAdminUser => {
-                if usage.admin_users < self.policy.max_admin_users { TrialDecision::Allow } else { TrialDecision::DenyLimit }
+                if usage.admin_users < self.policy.max_admin_users {
+                    TrialDecision::Allow
+                } else {
+                    TrialDecision::DenyLimit
+                }
             }
         }
     }
@@ -133,8 +162,18 @@ mod tests {
             expires_at_unix_ms: 100,
             policy: TrialPolicy::default(),
         };
-        let usage = TrialUsage { devices: 0, sites: 0, admin_users: 0 };
-        assert_eq!(license.decide(TrialAction::Read, usage, 101), TrialDecision::Allow);
-        assert_eq!(license.decide(TrialAction::LowRiskMutation, usage, 101), TrialDecision::DenyExpired);
+        let usage = TrialUsage {
+            devices: 0,
+            sites: 0,
+            admin_users: 0,
+        };
+        assert_eq!(
+            license.decide(TrialAction::Read, usage, 101),
+            TrialDecision::Allow
+        );
+        assert_eq!(
+            license.decide(TrialAction::LowRiskMutation, usage, 101),
+            TrialDecision::DenyExpired
+        );
     }
 }

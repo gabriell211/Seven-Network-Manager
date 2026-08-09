@@ -38,7 +38,11 @@ pub struct Observation<T> {
 }
 
 impl<T> Observation<T> {
-    pub fn unknown(source: impl Into<String>, observed_at_unix_ms: i64, error_code: impl Into<String>) -> Self {
+    pub fn unknown(
+        source: impl Into<String>,
+        observed_at_unix_ms: i64,
+        error_code: impl Into<String>,
+    ) -> Self {
         Self {
             value: None,
             state: HealthState::Unknown,
@@ -80,7 +84,11 @@ pub enum SuppressionDecision {
     SuppressDebounce,
 }
 
-pub fn suppression_decision(in_maintenance: bool, stable_for_samples: u16, required_samples: u16) -> SuppressionDecision {
+pub fn suppression_decision(
+    in_maintenance: bool,
+    stable_for_samples: u16,
+    required_samples: u16,
+) -> SuppressionDecision {
     if in_maintenance {
         SuppressionDecision::SuppressMaintenance
     } else if stable_for_samples < required_samples {

@@ -12,9 +12,11 @@ impl CapabilityId {
         let value = value.into();
         let valid = !value.is_empty()
             && value.len() <= 128
-            && value
-                .bytes()
-                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || matches!(byte, b'.' | b'-' | b'_'));
+            && value.bytes().all(|byte| {
+                byte.is_ascii_lowercase()
+                    || byte.is_ascii_digit()
+                    || matches!(byte, b'.' | b'-' | b'_')
+            });
         if !valid || !value.contains('.') {
             return Err("capability id must be a dotted lowercase identifier");
         }

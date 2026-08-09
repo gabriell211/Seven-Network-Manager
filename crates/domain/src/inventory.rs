@@ -115,8 +115,10 @@ pub fn decide_merge(left: &DeviceRecord, right: &DeviceRecord) -> MergeDecision 
     }
     if left.organization_id == right.organization_id && left.site_id == right.site_id {
         let weak_match = left.identifiers.iter().any(|identifier| {
-            matches!(identifier.kind, IdentifierKind::Hostname | IdentifierKind::AssetTag)
-                && right.identifiers.contains(identifier)
+            matches!(
+                identifier.kind,
+                IdentifierKind::Hostname | IdentifierKind::AssetTag
+            ) && right.identifiers.contains(identifier)
         });
         if weak_match {
             return MergeDecision::RequiresReview;
@@ -162,6 +164,9 @@ mod tests {
         let mut right = left.clone();
         right.id = Uuid::now_v7();
         right.organization_id = OrganizationId::new();
-        assert_eq!(decide_merge(&left, &right), MergeDecision::DifferentResource);
+        assert_eq!(
+            decide_merge(&left, &right),
+            MergeDecision::DifferentResource
+        );
     }
 }

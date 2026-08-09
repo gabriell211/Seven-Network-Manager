@@ -84,11 +84,20 @@ pub fn summarize_targets(results: &[TargetResult]) -> ChangeState {
     if results.is_empty() {
         return ChangeState::Failed;
     }
-    if results.iter().any(|item| item.outcome == TargetOutcome::Unknown || !item.confirmed) {
+    if results
+        .iter()
+        .any(|item| item.outcome == TargetOutcome::Unknown || !item.confirmed)
+    {
         return ChangeState::Unknown;
     }
-    let succeeded = results.iter().filter(|item| item.outcome == TargetOutcome::Succeeded).count();
-    let failed = results.iter().filter(|item| item.outcome == TargetOutcome::Failed).count();
+    let succeeded = results
+        .iter()
+        .filter(|item| item.outcome == TargetOutcome::Succeeded)
+        .count();
+    let failed = results
+        .iter()
+        .filter(|item| item.outcome == TargetOutcome::Failed)
+        .count();
     if succeeded == results.len() {
         ChangeState::Succeeded
     } else if failed == results.len() {
