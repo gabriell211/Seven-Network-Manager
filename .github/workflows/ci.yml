@@ -33,6 +33,7 @@ jobs:
         env:
           POSTGRES_PASSWORD: snm-ci-only-password
           SNM_RUNTIME_TOKEN: 0123456789abcdef0123456789abcdef0123456789abcdef
+          SNM_ACCESS_TOKEN_KEY: abcdef0123456789abcdef0123456789abcdef0123456789
           MONGO_INITDB_ROOT_PASSWORD: snm-ci-only-mongo-password
         run: docker compose config --quiet
 
@@ -66,7 +67,7 @@ jobs:
         run: cargo test --workspace --all-targets --locked
       - name: Build production binaries
         run: cargo build --workspace --bins --locked
-      - name: Smoke control-plane to site-runtime
+      - name: Smoke authenticated control-plane to site-runtime
         shell: bash
         env:
           SNM_RUNTIME_TOKEN: 0123456789abcdef0123456789abcdef0123456789abcdef
@@ -74,10 +75,17 @@ jobs:
           SNM_RUNTIME_URL: http://127.0.0.1:9765
           SNM_BACKEND_BIND: 127.0.0.1:8080
           SNM_RUN_MIGRATIONS: "true"
+          SNM_ACCESS_TOKEN_KEY: abcdef0123456789abcdef0123456789abcdef0123456789
+          SNM_AUTH_ISSUER: snm
+          SNM_AUTH_AUDIENCE: snm-api
+          SNM_AUTH_COOKIE_SECURE: "false"
           SNM_BOOTSTRAP_ORG_SLUG: ci-smoke
           SNM_BOOTSTRAP_ORG_NAME: CI Smoke Organization
           SNM_BOOTSTRAP_SITE_SLUG: default
           SNM_BOOTSTRAP_SITE_NAME: CI Smoke Site
+          SNM_BOOTSTRAP_ADMIN_EMAIL: admin@ci.invalid
+          SNM_BOOTSTRAP_ADMIN_NAME: CI Administrator
+          SNM_BOOTSTRAP_ADMIN_PASSWORD: CI-only-Strong-Password-2026!
         run: |
           set -euo pipefail
           target/debug/snm-site-runtime > /tmp/snm-runtime.log 2>&1 &
@@ -111,6 +119,12 @@ jobs:
           curl --fail --silent --show-error http://127.0.0.1:8080/ready >/tmp/backend-ready.json
           curl --fail --silent --show-error http://127.0.0.1:8080/api/v1/system >/tmp/backend-system.json
 
+          curl --fail --silent --show-error \
+            -c /tmp/auth.cookies \
+            -H 'content-type: application/json' \
+            --data '{"organizationSlug":"ci-smoke","email":"admin@ci.invalid","password":"CI-only-Strong-Password-2026!"}' \
+            http://127.0.0.1:8080/api/v1/auth/login >/tmp/login.json
+
           python3 - <<'PY'
           import json
           from pathlib import Path
@@ -120,6 +134,7 @@ jobs:
           backend = json.loads(Path('/tmp/backend-health.json').read_text())
           ready = json.loads(Path('/tmp/backend-ready.json').read_text())
           system = json.loads(Path('/tmp/backend-system.json').read_text())
+          login = json.loads(Path('/tmp/login.json').read_text())
 
           assert runtime['status'] == 'ok'
           assert 'runtime.capabilities.read' in capabilities['capabilities']
@@ -127,10 +142,58 @@ jobs:
           assert backend['status'] == 'ok'
           assert ready['database'] == 'ready'
           assert ready['runtime'] == 'ready'
-          assert ready['appliedMigrations'] >= 4
+          assert ready['appliedMigrations'] >= 6
           assert system['name'] == 'Seven Network Manager'
           assert system['deploymentMode'] == 'production-mvp-onprem'
+          assert login['tokenType'] == 'Bearer'
+          assert login['expiresInSeconds'] == 600
+          assert login['accessToken']
+          assert login['csrfToken'].startswith('csrf_')
+          Path('/tmp/access-1').write_text(login['accessToken'])
+          Path('/tmp/csrf-1').write_text(login['csrfToken'])
           PY
+
+          access_1="$(cat /tmp/access-1)"
+          csrf_1="$(cat /tmp/csrf-1)"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${access_1}" \
+            http://127.0.0.1:8080/api/v1/auth/me >/tmp/me-1.json
+
+          curl --fail --silent --show-error \
+            -b /tmp/auth.cookies -c /tmp/auth.cookies \
+            -H "x-snm-csrf: ${csrf_1}" \
+            -X POST http://127.0.0.1:8080/api/v1/auth/refresh >/tmp/refresh.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          first = Path('/tmp/access-1').read_text()
+          me = json.loads(Path('/tmp/me-1.json').read_text())
+          refreshed = json.loads(Path('/tmp/refresh.json').read_text())
+          assert me['permissions']
+          assert 'devices.view' in me['permissions']
+          assert refreshed['accessToken'] != first
+          assert refreshed['csrfToken'].startswith('csrf_')
+          Path('/tmp/access-2').write_text(refreshed['accessToken'])
+          Path('/tmp/csrf-2').write_text(refreshed['csrfToken'])
+          PY
+
+          access_2="$(cat /tmp/access-2)"
+          csrf_2="$(cat /tmp/csrf-2)"
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${access_2}" \
+            http://127.0.0.1:8080/api/v1/auth/me >/tmp/me-2.json
+
+          curl --fail --silent --show-error \
+            -b /tmp/auth.cookies -c /tmp/auth.cookies \
+            -H "x-snm-csrf: ${csrf_2}" \
+            -X POST http://127.0.0.1:8080/api/v1/auth/logout >/dev/null
+
+          status="$(curl --silent --output /tmp/me-after-logout.json --write-out '%{http_code}' \
+            -H "Authorization: Bearer ${access_2}" \
+            http://127.0.0.1:8080/api/v1/auth/me)"
+          test "$status" = "401"
 
   frontend:
     runs-on: ubuntu-latest
