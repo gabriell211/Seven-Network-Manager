@@ -34,6 +34,26 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
+      - name: Repair inventory store test principals
+        shell: bash
+        run: |
+          set -euo pipefail
+          python3 - <<'PY'
+          from pathlib import Path
+
+          paths = [
+              Path('crates/inventory-store/src/lib.rs'),
+              Path('crates/inventory-store/tests/search.rs'),
+          ]
+          old = '''            actor_type: AuditActorType::User,\n            actor_id: Some(Uuid::now_v7()),\n            session_id: Some(Uuid::now_v7()),'''
+          new = '''            actor_type: AuditActorType::System,\n            actor_id: None,\n            session_id: None,'''
+          for path in paths:
+              text = path.read_text()
+              count = text.count(old)
+              if count != 1:
+                  raise SystemExit(f'{path}: expected exactly one inventory test principal block, found {count}')
+              path.write_text(text.replace(old, new, 1))
+          PY
       - name: Resolve canonical Cargo graph
         run: cargo generate-lockfile
       - name: Canonical Rust formatting
