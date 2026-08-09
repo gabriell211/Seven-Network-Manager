@@ -22,6 +22,7 @@ def main() -> None:
 
     postgres_password = token(24)
     runtime_token = token(48)
+    access_token_key = token(48)
     mongo_password = token(24)
     values = {
         "SNM_ENV": "development",
@@ -33,6 +34,10 @@ def main() -> None:
         "SNM_RUNTIME_ALLOW_NON_LOOPBACK": "false",
         "SNM_RUN_MIGRATIONS": "true",
         "SNM_DATABASE_MAX_CONNECTIONS": "10",
+        "SNM_ACCESS_TOKEN_KEY": access_token_key,
+        "SNM_AUTH_ISSUER": "snm",
+        "SNM_AUTH_AUDIENCE": "snm-api",
+        "SNM_AUTH_COOKIE_SECURE": "false",
         "POSTGRES_USER": "snm",
         "POSTGRES_PASSWORD": postgres_password,
         "POSTGRES_DB": "snm",
@@ -48,7 +53,8 @@ def main() -> None:
         os.chmod(TARGET, 0o600)
     except OSError:
         pass
-    print("created .env with generated local-only credentials")
+    print("created .env with distinct generated local-only credentials")
+    print("administrator bootstrap credentials are intentionally not generated; set them explicitly for first startup only")
 
 
 if __name__ == "__main__":
