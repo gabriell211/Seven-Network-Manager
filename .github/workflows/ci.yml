@@ -1,0 +1,54 @@
+name: ci
+
+on:
+  pull_request:
+  push:
+    branches: [main, "agent/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  repository:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate repository boundaries
+        run: python3 scripts/validate_repo.py
+      - name: Require reproducible lockfiles
+        run: test -f pnpm-lock.yaml && test -f Cargo.lock
+
+  rust:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Resolve pinned Rust toolchain
+        run: rustup show
+      - name: Format
+        run: cargo fmt --all -- --check
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets -- -D warnings
+      - name: Test
+        run: cargo test --workspace --all-targets
+
+  frontend:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Activate pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.21.0 --activate
+          test "$(pnpm --version)" = "11.21.0"
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm --filter @seven-network-manager/frontend typecheck
+      - name: Lint
+        run: pnpm --filter @seven-network-manager/frontend lint
+      - name: Build
+        run: pnpm --filter @seven-network-manager/frontend build
