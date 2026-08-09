@@ -11,3 +11,6 @@ snm-security = { path = "../security" }
 sqlx.workspace = true
 thiserror.workspace = true
 uuid.workspace = true
+
+[dev-dependencies]
+tokio.workspace = true
