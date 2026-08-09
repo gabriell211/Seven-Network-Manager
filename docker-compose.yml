@@ -1,0 +1,152 @@
+name: seven-network-manager
+
+services:
+  postgres:
+    image: postgres:17.6-bookworm
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER:-snm}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set POSTGRES_PASSWORD in .env}
+      POSTGRES_DB: ${POSTGRES_DB:-snm}
+    ports:
+      - "127.0.0.1:5432:5432"
+    volumes:
+      - postgres-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [data]
+    restart: unless-stopped
+
+  redis:
+    image: redis:8.2.1-alpine
+    command: ["redis-server", "--appendonly", "no", "--save", ""]
+    ports:
+      - "127.0.0.1:6379:6379"
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 5s
+      timeout: 3s
+      retries: 20
+    networks: [data]
+    restart: unless-stopped
+
+  site-runtime:
+    build:
+      context: .
+      dockerfile: docker/runtime.Dockerfile
+    environment:
+      SNM_RUNTIME_BIND: 0.0.0.0:9765
+      SNM_RUNTIME_ALLOW_NON_LOOPBACK: "true"
+      SNM_RUNTIME_TOKEN: ${SNM_RUNTIME_TOKEN:?set SNM_RUNTIME_TOKEN in .env}
+      RUST_LOG: ${RUST_LOG:-info}
+    expose: ["9765"]
+    networks: [execution]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: ["ALL"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=16m,mode=1777
+
+  backend:
+    build:
+      context: .
+      dockerfile: docker/backend.Dockerfile
+    environment:
+      SNM_BACKEND_BIND: 0.0.0.0:8080
+      SNM_RUNTIME_URL: http://site-runtime:9765
+      SNM_RUNTIME_TOKEN: ${SNM_RUNTIME_TOKEN:?set SNM_RUNTIME_TOKEN in .env}
+      DATABASE_URL: postgres://${POSTGRES_USER:-snm}:${POSTGRES_PASSWORD}@postgres:5432/${POSTGRES_DB:-snm}
+      SNM_RUN_MIGRATIONS: "true"
+      SNM_DATABASE_MAX_CONNECTIONS: ${SNM_DATABASE_MAX_CONNECTIONS:-10}
+      SNM_ACCESS_TOKEN_KEY: ${SNM_ACCESS_TOKEN_KEY:?set SNM_ACCESS_TOKEN_KEY in .env}
+      SNM_AUTH_ISSUER: ${SNM_AUTH_ISSUER:-snm}
+      SNM_AUTH_AUDIENCE: ${SNM_AUTH_AUDIENCE:-snm-api}
+      SNM_AUTH_COOKIE_SECURE: ${SNM_AUTH_COOKIE_SECURE:-true}
+      SNM_BOOTSTRAP_ORG_SLUG: ${SNM_BOOTSTRAP_ORG_SLUG:-}
+      SNM_BOOTSTRAP_ORG_NAME: ${SNM_BOOTSTRAP_ORG_NAME:-}
+      SNM_BOOTSTRAP_SITE_SLUG: ${SNM_BOOTSTRAP_SITE_SLUG:-}
+      SNM_BOOTSTRAP_SITE_NAME: ${SNM_BOOTSTRAP_SITE_NAME:-}
+      SNM_BOOTSTRAP_ADMIN_EMAIL: ${SNM_BOOTSTRAP_ADMIN_EMAIL:-}
+      SNM_BOOTSTRAP_ADMIN_NAME: ${SNM_BOOTSTRAP_ADMIN_NAME:-}
+      SNM_BOOTSTRAP_ADMIN_PASSWORD: ${SNM_BOOTSTRAP_ADMIN_PASSWORD:-}
+      RUST_LOG: ${RUST_LOG:-info}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+      site-runtime:
+        condition: service_started
+    networks: [app, data, execution]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: ["ALL"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+
+  frontend:
+    build:
+      context: .
+      dockerfile: docker/frontend.Dockerfile
+    environment:
+      SNM_API_BASE_URL: http://backend:8080
+    ports:
+      - "127.0.0.1:3000:3000"
+    depends_on:
+      backend:
+        condition: service_started
+    networks: [app]
+    restart: unless-stopped
+    security_opt:
+      - no-new-privileges:true
+    cap_drop: ["ALL"]
+    read_only: true
+    tmpfs:
+      - /tmp:size=32m,mode=1777
+
+  mongo:
+    image: mongo:8.3.7
+    profiles: ["mongo"]
+    environment:
+      MONGO_INITDB_ROOT_USERNAME: ${MONGO_INITDB_ROOT_USERNAME:-snm}
+      MONGO_INITDB_ROOT_PASSWORD: ${MONGO_INITDB_ROOT_PASSWORD:?set MONGO_INITDB_ROOT_PASSWORD in .env}
+    ports:
+      - "127.0.0.1:27017:27017"
+    volumes:
+      - mongo-data:/data/db
+    healthcheck:
+      test: ["CMD-SHELL", "mongosh --quiet --eval 'db.runCommand({ ping: 1 }).ok' --username $${MONGO_INITDB_ROOT_USERNAME} --password $${MONGO_INITDB_ROOT_PASSWORD} --authenticationDatabase admin | grep 1"]
+      interval: 10s
+      timeout: 5s
+      retries: 20
+    networks: [data]
+    restart: unless-stopped
+
+  rabbitmq:
+    image: rabbitmq:4.1.4-management-alpine
+    profiles: ["distributed"]
+    ports:
+      - "127.0.0.1:5672:5672"
+      - "127.0.0.1:15672:15672"
+    networks: [data]
+    restart: unless-stopped
+
+networks:
+  app:
+  data:
+    internal: true
+  # This network has no published runtime port, but it must permit outbound
+  # traffic because the runtime is the component that reaches managed LANs.
+  execution:
+
+volumes:
+  postgres-data:
+  mongo-data:
