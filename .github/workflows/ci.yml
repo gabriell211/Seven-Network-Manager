@@ -53,8 +53,18 @@ jobs:
           --health-interval 5s
           --health-timeout 5s
           --health-retries 20
+      redis:
+        image: redis:8.2.1-alpine3.22
+        ports:
+          - 6379:6379
+        options: >-
+          --health-cmd "redis-cli ping"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
     env:
       DATABASE_URL: postgres://snm:snm-ci-only-password@127.0.0.1:5432/snm_ci
+      REDIS_URL: redis://127.0.0.1:6379/0
     steps:
       - uses: actions/checkout@v6
       - name: Resolve pinned Rust toolchain
@@ -79,6 +89,7 @@ jobs:
           SNM_AUTH_ISSUER: snm
           SNM_AUTH_AUDIENCE: snm-api
           SNM_AUTH_COOKIE_SECURE: "false"
+          SNM_INVENTORY_REQUIRE_APPROVAL: "true"
           SNM_BOOTSTRAP_ORG_SLUG: ci-smoke
           SNM_BOOTSTRAP_ORG_NAME: CI Smoke Organization
           SNM_BOOTSTRAP_SITE_SLUG: default
@@ -141,6 +152,7 @@ jobs:
           assert 'network.tcp.connect' in capabilities['capabilities']
           assert backend['status'] == 'ok'
           assert ready['database'] == 'ready'
+          assert ready['redis'] == 'ready'
           assert ready['runtime'] == 'ready'
           assert ready['appliedMigrations'] >= 9
           assert system['name'] == 'Seven Network Manager'
