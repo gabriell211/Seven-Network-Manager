@@ -1,0 +1,107 @@
+name: Bootstrap foundation
+
+on:
+  push:
+    branches:
+      - agent/foundation-c0-c1
+    paths:
+      - 'bootstrap/**'
+      - '.github/workflows/bootstrap-foundation.yml'
+
+permissions:
+  contents: write
+
+jobs:
+  materialize-and-validate:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    steps:
+      - name: Checkout staged branch
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Reconstruct project
+        shell: bash
+        run: |
+          set -euo pipefail
+          cat bootstrap/project.part00 bootstrap/project.part01 bootstrap/project.part02 bootstrap/project.part03 > /tmp/snm-project.b64
+          base64 --decode /tmp/snm-project.b64 > /tmp/snm-project.tar.gz
+          echo 'e7f12cd999ef400b00c3b13b9324bc353db252f5bca6a189fd55d37d83fe1eda  /tmp/snm-project.tar.gz' | sha256sum --check --strict
+          tar -xzf /tmp/snm-project.tar.gz -C "$GITHUB_WORKSPACE"
+
+      - name: Setup Node
+        uses: actions/setup-node@v4
+        with:
+          node-version-file: .node-version
+          cache: pnpm
+
+      - name: Activate pinned pnpm
+        shell: bash
+        run: |
+          set -euo pipefail
+          corepack enable
+          corepack prepare pnpm@11.21.0 --activate
+          pnpm --version
+
+      - name: Generate Node lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          pnpm install --lockfile-only
+          pnpm install --frozen-lockfile
+
+      - name: Setup pinned Rust
+        shell: bash
+        run: |
+          set -euo pipefail
+          rustup toolchain install 1.88.0 --profile minimal --component rustfmt --component clippy
+          rustup override set 1.88.0
+          rustc --version
+          cargo --version
+
+      - name: Generate Cargo lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          cargo generate-lockfile
+
+      - name: Materialize foundation commit
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf bootstrap
+          rm -f .github/workflows/bootstrap-foundation.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add -A
+          git commit -m 'feat: establish C0 foundation and execution boundary'
+          git push origin HEAD:agent/foundation-c0-c1
+
+      - name: Validate repository structure
+        shell: bash
+        run: python3 scripts/validate_repo.py
+
+      - name: Rust format
+        shell: bash
+        run: cargo fmt --all -- --check
+
+      - name: Rust clippy
+        shell: bash
+        run: cargo clippy --workspace --all-targets --all-features -- -D warnings
+
+      - name: Rust tests
+        shell: bash
+        run: cargo test --workspace --all-features
+
+      - name: Frontend typecheck
+        shell: bash
+        run: pnpm --filter @seven-network-manager/frontend typecheck
+
+      - name: Frontend lint
+        shell: bash
+        run: pnpm --filter @seven-network-manager/frontend lint
+
+      - name: Frontend production build
+        shell: bash
+        run: pnpm --filter @seven-network-manager/frontend build
