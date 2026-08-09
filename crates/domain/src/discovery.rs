@@ -54,7 +54,9 @@ impl DiscoveryScope {
         if self.concurrency_limit == 0 || self.rate_per_second == 0 || self.timeout_ms == 0 {
             return Err("discovery limits must be non-zero");
         }
-        if self.network.is_ipv6() && self.network.prefix_len() <= 64 && self.ipv6_strategy.is_none()
+        if matches!(&self.network, IpNet::V6(_))
+            && self.network.prefix_len() <= 64
+            && self.ipv6_strategy.is_none()
         {
             return Err("large IPv6 scopes require an explicit evidence-based strategy");
         }
