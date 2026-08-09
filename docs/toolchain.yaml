@@ -1,0 +1,27 @@
+node:
+  supported_line: "24 LTS"
+  package_manager: "pnpm"
+  pnpm_line: "11.x"
+  policy:
+    frozen_lockfile: true
+    single_lockfile: "pnpm-lock.yaml"
+    forbidden_lockfiles:
+      - package-lock.json
+      - npm-shrinkwrap.json
+      - yarn.lock
+frontend:
+  next: "16.3.x"
+  react: "19.2.x"
+  typescript: "6.0.x"
+rust:
+  channel: "stable"
+  minimum: "1.81"
+quality:
+  zero_deterministic_warnings: true
+  required_commands:
+    - cargo fmt --check
+    - cargo clippy --workspace --all-targets -- -D warnings
+    - cargo test --workspace
+    - pnpm install --frozen-lockfile
+    - pnpm build
+    - pnpm validate:roadmap

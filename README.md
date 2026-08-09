@@ -2,106 +2,88 @@
 
 Plataforma de gerenciamento de infraestrutura de rede criada e mantida por **Gabriell211**.
 
-O Seven Network Manager centraliza inventário, discovery, IPAM, telemetria, operações de rede e administração de infraestrutura sem exigir que o operador trabalhe diretamente com comandos de baixo nível no fluxo cotidiano.
+O Seven Network Manager centraliza inventario, discovery, IPAM, telemetria, operacoes de rede e administracao de infraestrutura sem exigir que o operador trabalhe diretamente com comandos de baixo nivel no fluxo cotidiano.
 
 ## Arquitetura
 
-O projeto adota um control plane modular e um runtime local separado para operações que dependem de alcance à LAN/L2.
+O projeto adota um control plane modular e um runtime local separado para operacoes que dependem de alcance a LAN/L2.
 
-```text
-Browser
-  |
-  v
-apps/frontend
-  |
-  v
-apps/backend (control plane)
-  |
-  | contrato versionado e autenticado
-  v
-apps/site-runtime
-  |
-  v
-crates/executor-core
-  |
-  v
-Providers / Transports / Rede gerenciada
+```mermaid
+flowchart TD
+  Browser["Browser"] --> Frontend["apps/frontend"]
+  Frontend --> Backend["apps/backend control plane"]
+  Backend --> Runtime["apps/site-runtime"]
+  Runtime --> Executor["crates/executor-core"]
+  Executor --> Network["Providers, transports e rede gerenciada"]
 ```
 
-### Regras estruturais
+## Regras estruturais
 
-- `apps/backend` concentra API, autorização, orchestration, estado transacional e decisões de produto.
-- `apps/site-runtime` executa operações que precisam alcançar a rede gerenciada e funciona sem sessão gráfica.
-- `crates/executor-core` contém o núcleo reutilizável de execução de capabilities, providers e transports.
-- `apps/frontend` é a interface web e nunca executa operações de rede diretamente.
-- PostgreSQL é a fonte transacional de verdade.
-- Redis é usado apenas para estado efêmero, locks, rate limiting e cache compatível com a semântica do domínio.
-- Operações são escopadas por `organization`, `site` e `routing_domain`.
-- Endereço IP não é identidade global de dispositivo.
-- Mudanças administrativas devem ser auditáveis, idempotentes quando aplicável e explicitamente autorizadas.
+- `apps/backend` concentra API, autorizacao, orchestration, estado transacional e decisoes de produto.
+- `apps/site-runtime` executa operacoes que precisam alcancar a rede gerenciada e funciona sem sessao grafica.
+- `crates/executor-core` contem o nucleo reutilizavel de execucao de capabilities, providers e transports.
+- `apps/frontend` e a interface web e nunca executa operacoes de rede diretamente.
+- PostgreSQL e a fonte transacional de verdade.
+- Redis e usado apenas para estado efemero, locks, rate limiting e cache compativel com a semantica do dominio.
+- Operacoes sao escopadas por `organization`, `site` e `routing_domain`.
+- Endereco IP nao e identidade global de dispositivo.
+- Mudancas administrativas devem ser auditaveis, idempotentes quando aplicavel e explicitamente autorizadas.
 
 ## Estrutura do monorepo
 
 ```text
 apps/
-  backend/          API/control plane Rust
+  backend/          API/control plane Rust Axum
   frontend/         interface Next.js
   site-runtime/     runtime local Rust headless
 crates/
-  domain/           tipos e invariantes de domínio
-  executor-core/    execução de capabilities/providers/transports
+  domain/           tipos e invariantes de dominio
+  executor-core/    execucao de capabilities/providers/transports
+  shared/           contratos compartilhados de API/erro
 docs/
-  adr/              decisões arquiteturais
-  architecture.md   visão estrutural
-  roadmap.yaml      roadmap validável
-  toolchain.yaml    matriz oficial de ferramentas
-docker/             imagens e arquivos auxiliares
+  adr/              decisoes arquiteturais
+  api/              contrato OpenAPI inicial
+  product/          trial, release e validacao comercial
 migrations/         migrations PostgreSQL
 packages/
   ui/               componentes compartilhados do frontend
-scripts/            validações e automações do repositório
+scripts/            validacoes do repositorio
 ```
 
-## Ciclos de execução
+## Issues atendidas nesta base
 
-O desenvolvimento segue a ordem de dependências definida nas issues:
-
-- **C0** — arquitetura, modelo de dados e contratos-base.
-- **C1** — plataforma, segurança e runtime de execução.
-- **C2** — inventário, IPAM e discovery.
-- **C3** — SNMP, telemetria e operação observável.
-- **C4** — serviços Windows básicos e gate do MVP.
-- **C5–C9** — administração ativa, switching, L3, perímetro, automação e gate v1.
-- **C10–C13** — multiempresa, sites remotos, HA, telemetria avançada, integrações e gate v2.
-
-O código não deve antecipar dependências posteriores apenas para acelerar uma tela. Cada capability precisa respeitar placement, segurança, contratos e critérios de aceite do seu ciclo.
+- #2 arquitetura modular, bounded contexts e ADR.
+- #3 monorepo, boundaries e workspace.
+- #4 Docker, networking e datastores.
+- #5 backend Rust/Axum.
+- #6 frontend Next.js self-hostable.
+- #7 schema PostgreSQL inicial.
+- #8 contrato REST, envelope de API e erro tipado.
+- #9 framework de capabilities/providers/transports/connectivity.
+- #89 routing domains/VRFs e identidade L3.
+- #117 executor core Rust headless/runtime local.
+- #119 trial controlado para testes, pilotos e validacao comercial.
 
 ## Desenvolvimento
-
-### Requisitos oficiais
-
-Consulte `docs/toolchain.yaml`. O baseline do frontend usa Node.js 24 LTS e pnpm 11. O backend e o runtime usam Rust stable pinado pelo repositório.
-
-### Subir infraestrutura local
 
 ```bash
 cp .env.example .env
 docker compose up -d postgres redis
 ```
 
-### Backend
+Backend:
 
 ```bash
 cargo run -p snm-backend
 ```
 
-### Runtime local
+Runtime local:
 
 ```bash
 cargo run -p snm-site-runtime
 ```
 
-### Frontend
+Frontend:
 
 ```bash
 corepack enable
@@ -109,16 +91,12 @@ pnpm install --frozen-lockfile
 pnpm --filter @seven-network-manager/frontend dev
 ```
 
-## Segurança por padrão
+Validacao leve do roadmap:
 
-- Nenhum segredo deve ser enviado ao frontend.
-- Nenhum segredo deve ser persistido em texto puro.
-- Runtime local não expõe superfície administrativa para a LAN por padrão.
-- Operações remotas retornam estados tipados; perda de conectividade nunca vira sucesso presumido.
-- `unknown`, `partial`, `cancelled`, `unsupported` e `not_applicable` são estados válidos quando representam a realidade.
-- Shell arbitrário não faz parte do contrato público de execução.
-- Logs e auditoria precisam preservar correlação sem registrar credenciais.
+```bash
+pnpm validate:roadmap
+```
 
-## Ownership
+## Trial
 
-Owner do roadmap e das entregas: **Gabriell211**.
+O trial controlado esta documentado em `docs/product/trial.md` e rastreado na issue #119. Ele existe para testar o produto em cliente piloto com limite, expiracao, auditoria e caminho de conversao comercial, sem contornar RBAC, audit, vault, approval ou release gates.

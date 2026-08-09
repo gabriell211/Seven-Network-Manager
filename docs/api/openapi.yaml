@@ -1,0 +1,29 @@
+openapi: 3.1.0
+info:
+  title: Seven Network Manager API
+  version: 0.1.0
+paths:
+  /health:
+    get:
+      summary: Backend health
+      responses:
+        "200":
+          description: Backend is reachable
+  /api/v1/system:
+    get:
+      summary: System foundation status
+      responses:
+        "200":
+          description: System status envelope
+  /api/v1/capabilities:
+    get:
+      summary: Foundation capability descriptors
+      responses:
+        "200":
+          description: Capability list envelope
+  /api/v1/trial/status:
+    get:
+      summary: Current local trial status
+      responses:
+        "200":
+          description: Trial status envelope

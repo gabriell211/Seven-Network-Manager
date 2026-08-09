@@ -1,0 +1,15 @@
+{
+  "name": "seven-network-manager",
+  "private": true,
+  "packageManager": "pnpm@11.0.0",
+  "engines": {
+    "node": ">=24 <25",
+    "pnpm": ">=11 <12"
+  },
+  "scripts": {
+    "dev": "pnpm --filter @seven-network-manager/frontend dev",
+    "build": "pnpm --filter @seven-network-manager/frontend build",
+    "lint": "pnpm --filter @seven-network-manager/frontend lint",
+    "validate:roadmap": "node scripts/validate-roadmap.mjs"
+  }
+}

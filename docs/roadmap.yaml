@@ -1,0 +1,19 @@
+roadmap:
+  owner: gabriell211
+  total_issues_after_trial: 119
+  execution_cycles:
+    C0:
+      name: Arquitetura, modelo de dados e contratos-base
+      issues: [2, 89, 3, 4, 5, 7, 8, 9]
+    C1:
+      name: Plataforma, seguranca e runtime de execucao
+      issues: [6, 10, 11, 12, 13, 14, 15, 57, 117, 86, 97]
+    RELEASE_TRIAL:
+      name: Trial controlado, piloto e validacao comercial
+      issues: [119]
+      after: [31, 55, 56, 79, 99, 101]
+  invariants:
+    - Browser nao executa capability de rede.
+    - Runtime local headless e separado do frontend.
+    - PostgreSQL e fonte transacional de verdade.
+    - Trial nao contorna RBAC, audit, vault, approval ou release gates.
