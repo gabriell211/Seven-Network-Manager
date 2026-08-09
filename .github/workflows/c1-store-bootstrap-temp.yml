@@ -39,20 +39,33 @@ jobs:
         run: |
           set -euo pipefail
           python3 - <<'PY'
+          import re
           from pathlib import Path
 
           paths = [
               Path('crates/inventory-store/src/lib.rs'),
               Path('crates/inventory-store/tests/search.rs'),
           ]
-          old = '''            actor_type: AuditActorType::User,\n            actor_id: Some(Uuid::now_v7()),\n            session_id: Some(Uuid::now_v7()),'''
-          new = '''            actor_type: AuditActorType::System,\n            actor_id: None,\n            session_id: None,'''
+          pattern = re.compile(
+              r'(?m)^(?P<indent>\s*)actor_type: AuditActorType::User,\n'
+              r'(?P=indent)actor_id: Some\(Uuid::now_v7\(\)\),\n'
+              r'(?P=indent)session_id: Some\(Uuid::now_v7\(\)\),'
+          )
           for path in paths:
               text = path.read_text()
-              count = text.count(old)
+              def replacement(match: re.Match[str]) -> str:
+                  indent = match.group('indent')
+                  return (
+                      f'{indent}actor_type: AuditActorType::System,\n'
+                      f'{indent}actor_id: None,\n'
+                      f'{indent}session_id: None,'
+                  )
+              updated, count = pattern.subn(replacement, text)
               if count != 1:
-                  raise SystemExit(f'{path}: expected exactly one inventory test principal block, found {count}')
-              path.write_text(text.replace(old, new, 1))
+                  raise SystemExit(
+                      f'{path}: expected exactly one inventory test principal block, found {count}'
+                  )
+              path.write_text(updated)
           PY
       - name: Resolve canonical Cargo graph
         run: cargo generate-lockfile
