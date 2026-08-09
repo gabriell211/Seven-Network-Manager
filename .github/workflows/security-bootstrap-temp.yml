@@ -1,0 +1,53 @@
+name: Temporary security bootstrap
+
+on:
+  pull_request:
+    branches: [main]
+    types: [opened, synchronize, reopened]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    if: github.event.pull_request.head.repo.full_name == github.repository && github.head_ref == 'agent/foundation-c0-c1'
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-bookworm
+        env:
+          POSTGRES_USER: snm
+          POSTGRES_PASSWORD: snm-ci-only-password
+          POSTGRES_DB: snm_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U snm -d snm_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://snm:snm-ci-only-password@127.0.0.1:5432/snm_ci
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ github.head_ref }}
+          fetch-depth: 0
+      - name: Resolve dependency graph
+        run: cargo generate-lockfile
+      - name: Format workspace
+        run: cargo fmt --all
+      - name: Compile and test workspace
+        run: cargo test --workspace --all-targets --locked
+      - name: Clippy as errors
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Commit lock and formatting then remove this temporary workflow
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm .github/workflows/security-bootstrap-temp.yml
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add Cargo.lock crates apps .github/workflows/security-bootstrap-temp.yml
+          git commit -m 'chore: validate security foundation'
+          git push origin HEAD:${{ github.head_ref }}
