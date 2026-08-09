@@ -79,7 +79,103 @@ jobs:
               raise SystemExit(
                   f'{inventory_store}: expected exactly one normalized identifier search clause'
               )
-          inventory_store.write_text(text.replace(old, new, 1))
+          text = text.replace(old, new, 1)
+
+          observed_pattern = re.compile(
+              r'async fn persist_observed_facts\([\s\S]*?\n}\n\nasync fn apply_observed_canonical_fields',
+              re.MULTILINE,
+          )
+          observed_replacement = '''struct ObservedFactContext<'a> {
+              organization_id: Uuid,
+              site_id: Uuid,
+              device_id: Uuid,
+              source: &'a str,
+              observed_at: DateTime<Utc>,
+          }
+
+          async fn persist_observed_facts(
+              tx: &mut Transaction<'_, Postgres>,
+              organization_id: Uuid,
+              site_id: Uuid,
+              device_id: Uuid,
+              observation: &DeviceObservation,
+              observed_at: DateTime<Utc>,
+          ) -> Result<(), InventoryError> {
+              let context = ObservedFactContext {
+                  organization_id,
+                  site_id,
+                  device_id,
+                  source: "discovery",
+                  observed_at,
+              };
+              upsert_observed_fact(
+                  tx,
+                  &context,
+                  "device_type",
+                  json!(observation.device_type.as_str()),
+              )
+              .await?;
+              for (field, value) in [
+                  ("display_name", observation.display_name.as_ref()),
+                  ("hostname", observation.hostname.as_ref()),
+                  ("vendor", observation.vendor.as_ref()),
+                  ("model", observation.model.as_ref()),
+                  ("os_name", observation.os_name.as_ref()),
+                  ("os_version", observation.os_version.as_ref()),
+                  ("firmware_version", observation.firmware_version.as_ref()),
+              ] {
+                  if let Some(value) = value {
+                      upsert_observed_fact(tx, &context, field, json!(value)).await?;
+                  }
+              }
+              if !observation.capabilities.is_empty() {
+                  upsert_observed_fact(
+                      tx,
+                      &context,
+                      "capabilities",
+                      json!(observation.capabilities),
+                  )
+                  .await?;
+              }
+              Ok(())
+          }
+
+          async fn upsert_observed_fact(
+              tx: &mut Transaction<'_, Postgres>,
+              context: &ObservedFactContext<'_>,
+              field: &str,
+              value: Value,
+          ) -> Result<(), InventoryError> {
+              sqlx::query(
+                  r#"
+                  INSERT INTO device_facts (
+                    organization_id, site_id, device_id, field_name, value,
+                    provenance, source, confidence, observed_at
+                  ) VALUES ($1,$2,$3,$4,$5,'observed',$6,1::numeric,$7)
+                  ON CONFLICT (device_id, field_name, provenance, source)
+                  DO UPDATE SET value = excluded.value, confidence = excluded.confidence,
+                                observed_at = excluded.observed_at, updated_at = now()
+                  "#,
+              )
+              .bind(context.organization_id)
+              .bind(context.site_id)
+              .bind(context.device_id)
+              .bind(field)
+              .bind(value)
+              .bind(context.source)
+              .bind(context.observed_at)
+              .execute(&mut **tx)
+              .await?;
+              Ok(())
+          }
+
+          async fn apply_observed_canonical_fields'''
+          text, count = observed_pattern.subn(observed_replacement, text, count=1)
+          if count != 1:
+              raise SystemExit(
+                  f'{inventory_store}: expected exactly one observed fact persistence block, found {count}'
+              )
+          inventory_store.write_text(text)
 
           platform_events = Path('crates/platform-events/src/lib.rs')
           text = platform_events.read_text()
