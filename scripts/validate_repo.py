@@ -8,6 +8,7 @@ import sys
 
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ERRORS: list[str] = []
+GENERATED_DIRS = {".git", ".next", "node_modules", "target"}
 
 
 def fail(message: str) -> None:
@@ -23,10 +24,20 @@ def require(path: str) -> None:
         fail(f"missing required path: {path}")
 
 
+def is_generated(path: pathlib.Path) -> bool:
+    try:
+        relative = path.relative_to(ROOT)
+    except ValueError:
+        return True
+    return any(part in GENERATED_DIRS for part in relative.parts)
+
+
 for required in [
     "Cargo.toml",
+    "Cargo.lock",
     "package.json",
     "pnpm-workspace.yaml",
+    "pnpm-lock.yaml",
     ".node-version",
     "rust-toolchain.toml",
     "apps/backend/Cargo.toml",
@@ -41,6 +52,8 @@ for required in [
     require(required)
 
 for forbidden in ROOT.rglob("*"):
+    if is_generated(forbidden):
+        continue
     if forbidden.is_file() and forbidden.name in {
         "package-lock.json",
         "npm-shrinkwrap.json",
@@ -63,7 +76,7 @@ if react != react_dom:
 executor_tree = "\n".join(
     p.read_text(encoding="utf-8", errors="ignore")
     for p in (ROOT / "crates/executor-core").rglob("*")
-    if p.is_file()
+    if p.is_file() and not is_generated(p)
 )
 for forbidden_symbol in ["tauri", "next", "axum", "sqlx", "postgres"]:
     if re.search(rf"\b{re.escape(forbidden_symbol)}\b", executor_tree, re.IGNORECASE):
