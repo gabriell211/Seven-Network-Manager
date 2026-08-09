@@ -8,6 +8,8 @@ use uuid::Uuid;
 use zeroize::{Zeroize, Zeroizing};
 
 type HmacSha256 = Hmac<Sha256>;
+const ACCESS_TOKEN_CLOCK_SKEW_SECONDS: i64 = 60;
+const ACCESS_TOKEN_MAX_LIFETIME_SECONDS: i64 = 15 * 60;
 
 #[derive(Clone)]
 pub struct AccessTokenKey(Zeroizing<Vec<u8>>);
@@ -35,6 +37,7 @@ pub struct AccessClaims {
     pub jti: Uuid,
     pub scopes: Vec<String>,
     pub iat: i64,
+    pub nbf: i64,
     pub exp: i64,
 }
 
@@ -48,9 +51,7 @@ pub fn encode_access_token(
     claims: &AccessClaims,
     key: &AccessTokenKey,
 ) -> Result<String, TokenError> {
-    if claims.exp <= claims.iat {
-        return Err(TokenError::InvalidLifetime);
-    }
+    validate_claim_lifetime(claims)?;
     let header = JwtHeader {
         alg: "HS256".to_owned(),
         typ: "JWT".to_owned(),
@@ -115,13 +116,26 @@ pub fn decode_access_token(
     if claims.iss != expected_issuer || claims.aud != expected_audience {
         return Err(TokenError::InvalidContext);
     }
-    if claims.exp <= now_unix_seconds || claims.iat > now_unix_seconds.saturating_add(60) {
+    validate_claim_lifetime(&claims)?;
+    if claims.exp <= now_unix_seconds
+        || claims.nbf > now_unix_seconds.saturating_add(ACCESS_TOKEN_CLOCK_SKEW_SECONDS)
+        || claims.iat > now_unix_seconds.saturating_add(ACCESS_TOKEN_CLOCK_SKEW_SECONDS)
+    {
         return Err(TokenError::ExpiredOrNotYetValid);
     }
-    if claims.exp.saturating_sub(claims.iat) > 15 * 60 {
+    Ok(claims)
+}
+
+fn validate_claim_lifetime(claims: &AccessClaims) -> Result<(), TokenError> {
+    if claims.iat < 0
+        || claims.nbf < claims.iat.saturating_sub(ACCESS_TOKEN_CLOCK_SKEW_SECONDS)
+        || claims.exp <= claims.nbf
+        || claims.exp <= claims.iat
+        || claims.exp.saturating_sub(claims.iat) > ACCESS_TOKEN_MAX_LIFETIME_SECONDS
+    {
         return Err(TokenError::InvalidLifetime);
     }
-    Ok(claims)
+    Ok(())
 }
 
 pub struct IssuedOpaqueToken {
@@ -223,6 +237,7 @@ mod tests {
             jti: Uuid::now_v7(),
             scopes: vec!["devices.view".into()],
             iat: 1_000,
+            nbf: 1_000,
             exp: 1_600,
         }
     }
@@ -240,6 +255,17 @@ mod tests {
         assert_eq!(
             decode_access_token(&tampered, &key(), 1_100, "snm", "snm-api").unwrap_err(),
             TokenError::InvalidSignature
+        );
+    }
+
+    #[test]
+    fn token_is_rejected_before_nbf() {
+        let mut value = claims();
+        value.nbf = 1_300;
+        let encoded = encode_access_token(&value, &key()).unwrap();
+        assert_eq!(
+            decode_access_token(&encoded, &key(), 1_100, "snm", "snm-api").unwrap_err(),
+            TokenError::ExpiredOrNotYetValid
         );
     }
 
