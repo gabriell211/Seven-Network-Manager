@@ -1,10 +1,13 @@
 mod auth;
+mod authorization;
 mod db;
+mod inventory_api;
 
 use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
 use auth::AuthService;
+use authorization::AuthorizationService;
 use axum::{
     body::Body,
     extract::{Request, State},
@@ -16,6 +19,7 @@ use axum::{
 };
 use db::Database;
 use serde::Serialize;
+use snm_inventory_store::InventoryStore;
 use snm_observability::{CorrelationContext, TelemetryConfig};
 use tower_http::{catch_panic::CatchPanicLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::{error, info, warn, Instrument};
@@ -25,6 +29,9 @@ struct AppState {
     runtime: Arc<dyn RuntimePort>,
     database: Database,
     auth: Arc<AuthService>,
+    authorization: Arc<AuthorizationService>,
+    inventory: InventoryStore,
+    inventory_require_approval: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -134,11 +141,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let auth = Arc::new(AuthService::from_env(database.clone())?);
     maybe_bootstrap_admin(&auth).await?;
+    let authorization = Arc::new(AuthorizationService::from_env(database.clone())?);
+    let inventory = InventoryStore::new(database.pool().clone());
+    let inventory_require_approval = env_bool("SNM_INVENTORY_REQUIRE_APPROVAL", true);
 
     let state = AppState {
         runtime: Arc::new(HttpRuntimeClient::new(runtime_url)?),
         database,
         auth,
+        authorization,
+        inventory,
+        inventory_require_approval,
     };
 
     let app = Router::new()
@@ -149,6 +162,18 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/api/v1/auth/refresh", post(auth::refresh))
         .route("/api/v1/auth/logout", post(auth::logout))
         .route("/api/v1/auth/me", get(auth::me))
+        .route(
+            "/api/v1/sites/{site_id}/devices",
+            get(inventory_api::list_devices).post(inventory_api::create_device),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/devices/{device_id}",
+            get(inventory_api::get_device).patch(inventory_api::update_device),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/devices/{device_id}/lifecycle",
+            post(inventory_api::transition_lifecycle),
+        )
         .with_state(state)
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
@@ -318,9 +343,13 @@ async fn system(headers: HeaderMap) -> Response {
 }
 
 fn env_flag(name: &str) -> bool {
+    env_bool(name, false)
+}
+
+fn env_bool(name: &str, default: bool) -> bool {
     env::var(name)
-        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes"))
-        .unwrap_or(false)
+        .map(|value| matches!(value.to_ascii_lowercase().as_str(), "1" | "true" | "yes" | "on"))
+        .unwrap_or(default)
 }
 
 async fn shutdown_signal() {
