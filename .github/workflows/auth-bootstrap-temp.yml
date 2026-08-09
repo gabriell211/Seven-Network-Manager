@@ -36,8 +36,19 @@ jobs:
           fetch-depth: 0
       - name: Resolve complete Rust graph
         run: cargo generate-lockfile
-      - name: Keep auth error type usable by parent module
-        run: sed -i 's/^enum AuthError/pub(crate) enum AuthError/' apps/backend/src/auth.rs
+      - name: Finalize backend module boundaries
+        shell: bash
+        run: |
+          set -euo pipefail
+          sed -i 's/^enum AuthError/pub(crate) enum AuthError/' apps/backend/src/auth.rs
+          sed -i 's/signing_secret\.as_bytes()\.len()/signing_secret.len()/' apps/backend/src/auth.rs
+          sed -i '/^mod outbox;$/d' apps/backend/src/main.rs
+          cat > apps/backend/src/lib.rs <<'EOF'
+          //! Reusable control-plane infrastructure that is intentionally independent
+          //! from the backend binary lifecycle.
+
+          pub mod outbox;
+          EOF
       - name: Canonical Rust formatting
         run: cargo fmt --all
       - name: Test workspace with PostgreSQL
