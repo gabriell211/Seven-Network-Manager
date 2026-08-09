@@ -1,0 +1,42 @@
+name: Refresh pnpm lock
+
+on:
+  push:
+    branches:
+      - agent/foundation-c0-c1
+    paths:
+      - apps/frontend/package.json
+      - pnpm-workspace.yaml
+
+permissions:
+  contents: write
+
+jobs:
+  refresh:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/foundation-c0-c1
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Activate pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.21.0 --activate
+      - name: Refresh lockfile
+        run: pnpm install --lockfile-only
+      - name: Commit lockfile
+        shell: bash
+        run: |
+          set -euo pipefail
+          if git diff --quiet -- pnpm-lock.yaml; then
+            exit 0
+          fi
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add pnpm-lock.yaml
+          git commit -m 'chore: refresh pnpm lockfile'
+          git push origin HEAD:agent/foundation-c0-c1
