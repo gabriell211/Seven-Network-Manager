@@ -9,6 +9,7 @@ import sys
 ROOT = pathlib.Path(__file__).resolve().parents[1]
 ERRORS: list[str] = []
 GENERATED_DIRS = {".git", ".next", "node_modules", "target"}
+MIGRATION_NAME = re.compile(r"^(?P<version>\d+)_[a-z0-9][a-z0-9_]*\.sql$")
 
 
 def fail(message: str) -> None:
@@ -48,6 +49,7 @@ for required in [
     "docs/architecture.md",
     "docs/toolchain.yaml",
     "migrations/0001_foundation.sql",
+    "migrations/0009_inventory_lifecycle.sql",
 ]:
     require(required)
 
@@ -104,6 +106,23 @@ migration = text("migrations/0001_foundation.sql")
 for token in ["routing_domains", "cidr", "inet", "outbox_events", "audit_events"]:
     if token not in migration:
         fail(f"foundation migration is missing {token}")
+
+migration_versions: dict[int, list[str]] = {}
+migrations_dir = ROOT / "migrations"
+for migration_path in sorted(migrations_dir.glob("*.sql")):
+    match = MIGRATION_NAME.fullmatch(migration_path.name)
+    if match is None:
+        fail(
+            "migration filename must be '<numeric-version>_<snake_case_name>.sql': "
+            f"{migration_path.name}"
+        )
+        continue
+    version = int(match.group("version"))
+    migration_versions.setdefault(version, []).append(migration_path.name)
+
+for version, names in sorted(migration_versions.items()):
+    if len(names) > 1:
+        fail(f"duplicate migration version {version}: {', '.join(names)}")
 
 if ERRORS:
     for error in ERRORS:
