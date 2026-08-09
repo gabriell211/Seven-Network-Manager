@@ -7,6 +7,7 @@ on:
 
 permissions:
   contents: read
+  issues: read
 
 jobs:
   repository:
@@ -17,8 +18,23 @@ jobs:
         run: python3 scripts/validate_repo.py
       - name: Validate machine-readable roadmap
         run: python3 scripts/validate_roadmap.py
+      - name: Verify issue mirror has no GitHub drift
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          cp docs/roadmap.json /tmp/roadmap.json
+          python3 scripts/sync_roadmap.py
+          diff -u /tmp/roadmap.json docs/roadmap.json
       - name: Require reproducible lockfiles
         run: test -f pnpm-lock.yaml && test -f Cargo.lock
+      - name: Validate reference deployment
+        env:
+          POSTGRES_PASSWORD: snm-ci-only-password
+          SNM_RUNTIME_TOKEN: 0123456789abcdef0123456789abcdef0123456789abcdef
+          MONGO_INITDB_ROOT_PASSWORD: snm-ci-only-mongo-password
+        run: docker compose config --quiet
 
   rust:
     runs-on: ubuntu-latest
@@ -111,7 +127,7 @@ jobs:
           assert backend['status'] == 'ok'
           assert ready['database'] == 'ready'
           assert ready['runtime'] == 'ready'
-          assert ready['appliedMigrations'] >= 2
+          assert ready['appliedMigrations'] >= 4
           assert system['name'] == 'Seven Network Manager'
           assert system['deploymentMode'] == 'production-mvp-onprem'
           PY
