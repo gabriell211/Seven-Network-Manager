@@ -142,7 +142,7 @@ jobs:
           assert backend['status'] == 'ok'
           assert ready['database'] == 'ready'
           assert ready['runtime'] == 'ready'
-          assert ready['appliedMigrations'] >= 6
+          assert ready['appliedMigrations'] >= 7
           assert system['name'] == 'Seven Network Manager'
           assert system['deploymentMode'] == 'production-mvp-onprem'
           assert login['tokenType'] == 'Bearer'
