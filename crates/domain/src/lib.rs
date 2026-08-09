@@ -2,6 +2,15 @@
 //! This crate intentionally has no dependency on HTTP frameworks, databases,
 //! vendor SDKs, transports, or presentation code.
 
+pub mod change_control;
+pub mod discovery;
+pub mod governance;
+pub mod inventory;
+pub mod ipam;
+pub mod monitoring;
+pub mod provider;
+pub mod trial;
+
 use std::{fmt, net::IpAddr, str::FromStr, time::Duration};
 
 use serde::{Deserialize, Serialize};
