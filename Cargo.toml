@@ -4,6 +4,7 @@ members = [
   "apps/site-runtime",
   "crates/domain",
   "crates/executor-core",
+  "crates/platform-events",
   "crates/security",
 ]
 resolver = "2"
