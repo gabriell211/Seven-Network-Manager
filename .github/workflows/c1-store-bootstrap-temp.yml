@@ -126,10 +126,22 @@ jobs:
         run: cargo generate-lockfile
       - name: Canonical Rust formatting
         run: cargo fmt --all
+      - name: Clippy as errors
+        id: clippy
+        shell: bash
+        run: |
+          set -o pipefail
+          cargo clippy --workspace --all-targets --locked --message-format=short -- -D warnings 2>&1 | tee /tmp/clippy-diagnostics.log
+      - name: Upload Clippy diagnostics
+        if: failure() && steps.clippy.outcome == 'failure'
+        uses: actions/upload-artifact@v4
+        with:
+          name: clippy-diagnostics
+          path: /tmp/clippy-diagnostics.log
+          if-no-files-found: error
+          retention-days: 1
       - name: Test complete workspace against PostgreSQL
         run: cargo test --workspace --all-targets --locked
-      - name: Clippy as errors
-        run: cargo clippy --workspace --all-targets --locked --message-format=short -- -D warnings
       - name: Commit validated graph and formatting
         shell: bash
         run: |
