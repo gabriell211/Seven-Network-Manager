@@ -1,11 +1,8 @@
 BEGIN;
 
 ALTER TABLE outbox_events
-  ADD COLUMN attempts integer NOT NULL DEFAULT 0 CHECK (attempts >= 0),
   ADD COLUMN lease_owner text,
   ADD COLUMN lease_expires_at timestamptz,
-  ADD COLUMN published_at timestamptz,
-  ADD COLUMN last_error_code text,
   ADD COLUMN last_error_at timestamptz,
   ADD CONSTRAINT outbox_lease_pair CHECK (
     (lease_owner IS NULL AND lease_expires_at IS NULL)
