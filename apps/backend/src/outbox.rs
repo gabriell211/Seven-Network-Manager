@@ -1,10 +1,8 @@
-use std::{sync::Arc, time::Duration};
+use std::{error::Error, fmt, sync::Arc, time::Duration};
 
 use async_trait::async_trait;
-use chrono::{DateTime, Utc};
 use serde_json::Value;
 use sqlx::{PgPool, Postgres, Row, Transaction};
-use thiserror::Error;
 use tokio::sync::Semaphore;
 use tracing::{error, info, warn};
 use uuid::Uuid;
@@ -44,7 +42,6 @@ pub struct OutboxEvent {
     pub event_version: i32,
     pub payload: Value,
     pub correlation_id: Uuid,
-    pub occurred_at: DateTime<Utc>,
     pub attempts: i32,
 }
 
@@ -58,7 +55,8 @@ impl OutboxStore {
         Self { pool }
     }
 
-    /// Must be called inside the same transaction as the domain mutation.
+    /// This is deliberately transaction-bound. The caller must use the same
+    /// PostgreSQL transaction that persists the corresponding domain change.
     pub async fn enqueue(
         tx: &mut Transaction<'_, Postgres>,
         event: &NewOutboxEvent,
@@ -117,8 +115,7 @@ impl OutboxStore {
             WHERE event.id = picked.id
             RETURNING event.id, event.organization_id, event.aggregate_type,
                       event.aggregate_id, event.event_type, event.event_version,
-                      event.payload, event.correlation_id, event.occurred_at,
-                      event.attempts
+                      event.payload, event.correlation_id, event.attempts
             "#,
         )
         .bind(batch_size.clamp(1, 250))
@@ -282,7 +279,6 @@ fn row_to_event(row: sqlx::postgres::PgRow) -> Result<OutboxEvent, OutboxError> 
         event_version: row.try_get("event_version")?,
         payload: row.try_get("payload")?,
         correlation_id: row.try_get("correlation_id")?,
-        occurred_at: row.try_get("occurred_at")?,
         attempts: row.try_get("attempts")?,
     })
 }
@@ -298,11 +294,18 @@ pub trait EventPublisher: Send + Sync {
     async fn publish(&self, event: &OutboxEvent) -> Result<(), PublishError>;
 }
 
-#[derive(Debug, Error)]
-#[error("event publication failed: {code}")]
+#[derive(Debug)]
 pub struct PublishError {
     pub code: String,
 }
+
+impl fmt::Display for PublishError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(formatter, "event publication failed: {}", self.code)
+    }
+}
+
+impl Error for PublishError {}
 
 pub struct OutboxDispatcher<P> {
     store: OutboxStore,
@@ -397,26 +400,49 @@ fn retry_delay_seconds(attempt: i32) -> u64 {
     2_u64.saturating_pow(exponent).clamp(1, 60)
 }
 
-#[derive(Debug, Error)]
+#[derive(Debug)]
 pub enum OutboxError {
-    #[error("outbox event is invalid")]
     InvalidEvent,
-    #[error("outbox claim is invalid")]
     InvalidClaim,
-    #[error("outbox delivery failure parameters are invalid")]
     InvalidFailure,
-    #[error("outbox consumer identifier is invalid")]
     InvalidConsumer,
-    #[error("outbox dispatcher configuration is invalid")]
     InvalidDispatcher,
-    #[error("outbox lease was lost")]
     LeaseLost,
-    #[error("outbox dispatcher has been closed")]
     DispatcherClosed,
-    #[error("outbox dispatcher task failed")]
     DispatcherTaskFailed,
-    #[error(transparent)]
-    Database(#[from] sqlx::Error),
+    Database(sqlx::Error),
+}
+
+impl fmt::Display for OutboxError {
+    fn fmt(&self, formatter: &mut fmt::Formatter<'_>) -> fmt::Result {
+        let message = match self {
+            Self::InvalidEvent => "outbox event is invalid",
+            Self::InvalidClaim => "outbox claim is invalid",
+            Self::InvalidFailure => "outbox delivery failure parameters are invalid",
+            Self::InvalidConsumer => "outbox consumer identifier is invalid",
+            Self::InvalidDispatcher => "outbox dispatcher configuration is invalid",
+            Self::LeaseLost => "outbox lease was lost",
+            Self::DispatcherClosed => "outbox dispatcher has been closed",
+            Self::DispatcherTaskFailed => "outbox dispatcher task failed",
+            Self::Database(_) => "outbox database operation failed",
+        };
+        formatter.write_str(message)
+    }
+}
+
+impl Error for OutboxError {
+    fn source(&self) -> Option<&(dyn Error + 'static)> {
+        match self {
+            Self::Database(error) => Some(error),
+            _ => None,
+        }
+    }
+}
+
+impl From<sqlx::Error> for OutboxError {
+    fn from(error: sqlx::Error) -> Self {
+        Self::Database(error)
+    }
 }
 
 #[cfg(test)]
@@ -468,10 +494,10 @@ mod tests {
         .unwrap()
     }
 
-    async fn committed_event(pool: &PgPool, org: Uuid) -> NewOutboxEvent {
+    async fn committed_event(pool: &PgPool, organization_id: Uuid) -> NewOutboxEvent {
         let event = NewOutboxEvent {
             id: Uuid::now_v7(),
-            organization_id: org,
+            organization_id,
             aggregate_type: "device".into(),
             aggregate_id: Uuid::now_v7().to_string(),
             event_type: "device.created".into(),
@@ -494,8 +520,8 @@ mod tests {
     #[tokio::test]
     async fn event_survives_commit_before_publication_and_is_claimed_once() {
         let Some(pool) = pool().await else { return };
-        let org = organization(&pool).await;
-        let event = committed_event(&pool, org).await;
+        let organization_id = organization(&pool).await;
+        let event = committed_event(&pool, organization_id).await;
         let store = OutboxStore::new(pool);
 
         let first = store
@@ -515,31 +541,25 @@ mod tests {
         let Some(pool) = pool().await else { return };
         let store = OutboxStore::new(pool);
         let event_id = Uuid::now_v7();
-        assert!(
-            store
-                .record_consumption("fixture-consumer", event_id)
-                .await
-                .unwrap()
-        );
-        assert!(
-            !store
-                .record_consumption("fixture-consumer", event_id)
-                .await
-                .unwrap()
-        );
-        assert!(
-            store
-                .record_consumption("another-consumer", event_id)
-                .await
-                .unwrap()
-        );
+        assert!(store
+            .record_consumption("fixture-consumer", event_id)
+            .await
+            .unwrap());
+        assert!(!store
+            .record_consumption("fixture-consumer", event_id)
+            .await
+            .unwrap());
+        assert!(store
+            .record_consumption("another-consumer", event_id)
+            .await
+            .unwrap());
     }
 
     #[tokio::test]
     async fn failed_publication_is_retried_without_false_success() {
         let Some(pool) = pool().await else { return };
-        let org = organization(&pool).await;
-        let event = committed_event(&pool, org).await;
+        let organization_id = organization(&pool).await;
+        let event = committed_event(&pool, organization_id).await;
         let store = OutboxStore::new(pool.clone());
         let publisher = Arc::new(CountingPublisher {
             calls: AtomicUsize::new(0),
@@ -548,14 +568,16 @@ mod tests {
         let dispatcher = OutboxDispatcher::new(store, publisher, "worker-retry", 3, 2).unwrap();
         dispatcher.dispatch_once(10).await.unwrap();
 
-        let row = sqlx::query("SELECT status, published_at FROM outbox_events WHERE id = $1")
-            .bind(event.id)
-            .fetch_one(&pool)
-            .await
-            .unwrap();
+        let row = sqlx::query(
+            "SELECT status, (published_at IS NOT NULL) AS published FROM outbox_events WHERE id = $1",
+        )
+        .bind(event.id)
+        .fetch_one(&pool)
+        .await
+        .unwrap();
         let status: String = row.try_get("status").unwrap();
-        let published_at: Option<DateTime<Utc>> = row.try_get("published_at").unwrap();
+        let published: bool = row.try_get("published").unwrap();
         assert_eq!(status, "failed");
-        assert!(published_at.is_none());
+        assert!(!published);
     }
 }
