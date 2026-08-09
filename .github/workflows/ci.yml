@@ -20,6 +20,22 @@ jobs:
 
   rust:
     runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-bookworm
+        env:
+          POSTGRES_USER: snm
+          POSTGRES_PASSWORD: snm-ci-only-password
+          POSTGRES_DB: snm_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U snm -d snm_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://snm:snm-ci-only-password@127.0.0.1:5432/snm_ci
     steps:
       - uses: actions/checkout@v6
       - name: Resolve pinned Rust toolchain
@@ -27,9 +43,9 @@ jobs:
       - name: Format
         run: cargo fmt --all -- --check
       - name: Clippy
-        run: cargo clippy --workspace --all-targets -- -D warnings
-      - name: Test
-        run: cargo test --workspace --all-targets
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test migrations, domain and runtime contracts
+        run: cargo test --workspace --all-targets --locked
 
   frontend:
     runs-on: ubuntu-latest
