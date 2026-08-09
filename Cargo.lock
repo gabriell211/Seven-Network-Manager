@@ -1722,6 +1722,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "snm-identity-store"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "snm-security",
+ "sqlx",
+ "thiserror",
+ "uuid",
+]
+
+[[package]]
 name = "snm-platform-events"
 version = "0.1.0"
 dependencies = [
@@ -1748,6 +1759,19 @@ dependencies = [
  "sha2",
  "snm-domain",
  "subtle",
+ "thiserror",
+ "uuid",
+ "zeroize",
+]
+
+[[package]]
+name = "snm-security-store"
+version = "0.1.0"
+dependencies = [
+ "serde",
+ "serde_json",
+ "snm-security",
+ "sqlx",
  "thiserror",
  "uuid",
  "zeroize",
