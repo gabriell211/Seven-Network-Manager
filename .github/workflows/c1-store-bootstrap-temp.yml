@@ -42,8 +42,6 @@ jobs:
           import re
           from pathlib import Path
 
-          # Inventory store tests model internal/system mutations. They must not
-          # invent a session UUID that violates the audit FK.
           principal_paths = [
               Path('crates/inventory-store/src/lib.rs'),
               Path('crates/inventory-store/tests/search.rs'),
@@ -69,7 +67,6 @@ jobs:
                   )
               path.write_text(updated)
 
-          # Search is separator-tolerant without weakening canonical identity.
           inventory_store = Path('crates/inventory-store/src/lib.rs')
           text = inventory_store.read_text()
           old = '                builder.push(" OR di.normalized_value LIKE ");'
@@ -84,10 +81,6 @@ jobs:
               )
           inventory_store.write_text(text.replace(old, new, 1))
 
-          # Outbox tests share the same PostgreSQL instance with other workspace
-          # tests. Serialize only the outbox claim tests and make the fixture
-          # event the oldest eligible event so global production claiming stays
-          # unchanged while the tests remain deterministic.
           platform_events = Path('crates/platform-events/src/lib.rs')
           text = platform_events.read_text()
 
@@ -136,7 +129,7 @@ jobs:
       - name: Test complete workspace against PostgreSQL
         run: cargo test --workspace --all-targets --locked
       - name: Clippy as errors
-        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+        run: cargo clippy --workspace --all-targets --locked --message-format=short -- -D warnings
       - name: Commit validated graph and formatting
         shell: bash
         run: |
