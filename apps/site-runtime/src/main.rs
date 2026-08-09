@@ -75,7 +75,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/v1/capabilities", get(capabilities))
         .route("/v1/execute/tcp-connect", post(tcp_connect))
         .with_state(state)
-        .layer(TimeoutLayer::new(Duration::from_secs(35)))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(35),
+        ))
         .layer(TraceLayer::new_for_http())
         .layer(CatchPanicLayer::new());
 
@@ -105,8 +108,8 @@ async fn ready() -> Json<HealthResponse> {
 }
 
 async fn capabilities(State(state): State<AppState>, headers: HeaderMap) -> Response {
-    if let Err(response) = authorize(&headers, &state.token) {
-        return response;
+    if let Err(status) = authorize(&headers, &state.token) {
+        return status.into_response();
     }
 
     Json(CapabilityResponse {
@@ -125,8 +128,8 @@ async fn tcp_connect(
     headers: HeaderMap,
     Json(request): Json<TcpConnectRequest>,
 ) -> Response {
-    if let Err(response) = authorize(&headers, &state.token) {
-        return response;
+    if let Err(status) = authorize(&headers, &state.token) {
+        return status.into_response();
     }
 
     match state.executor.tcp_connect(request).await {
@@ -153,15 +156,15 @@ async fn tcp_connect(
     }
 }
 
-fn authorize(headers: &HeaderMap, expected: &str) -> Result<(), Response> {
+fn authorize(headers: &HeaderMap, expected: &str) -> Result<(), StatusCode> {
     let Some(value) = headers.get(axum::http::header::AUTHORIZATION) else {
-        return Err(StatusCode::UNAUTHORIZED.into_response());
+        return Err(StatusCode::UNAUTHORIZED);
     };
     let Ok(value) = value.to_str() else {
-        return Err(StatusCode::UNAUTHORIZED.into_response());
+        return Err(StatusCode::UNAUTHORIZED);
     };
     let Some(provided) = value.strip_prefix("Bearer ") else {
-        return Err(StatusCode::UNAUTHORIZED.into_response());
+        return Err(StatusCode::UNAUTHORIZED);
     };
 
     let same_length = provided.len() == expected.len();
@@ -169,7 +172,7 @@ fn authorize(headers: &HeaderMap, expected: &str) -> Result<(), Response> {
     if matches {
         Ok(())
     } else {
-        Err(StatusCode::UNAUTHORIZED.into_response())
+        Err(StatusCode::UNAUTHORIZED)
     }
 }
 
