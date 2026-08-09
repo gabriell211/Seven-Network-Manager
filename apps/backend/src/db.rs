@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use serde::Serialize;
-use sqlx::{postgres::PgPoolOptions, PgPool, Row};
+use sqlx::{PgPool, Row, postgres::PgPoolOptions};
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -213,12 +213,7 @@ mod tests {
         };
         let suffix = Uuid::now_v7().simple().to_string();
         let (organization_id, site_id, default_rd) = database
-            .bootstrap_scope(
-                &format!("vrf-{suffix}"),
-                "VRF Test",
-                "default",
-                "VRF Site",
-            )
+            .bootstrap_scope(&format!("vrf-{suffix}"), "VRF Test", "default", "VRF Site")
             .await
             .expect("bootstrap scope");
 

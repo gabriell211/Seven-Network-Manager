@@ -159,10 +159,11 @@ async fn maybe_bootstrap_scope(database: &Database) -> Result<(), sqlx::Error> {
     let Ok(organization_slug) = env::var("SNM_BOOTSTRAP_ORG_SLUG") else {
         return Ok(());
     };
-    let organization_name = env::var("SNM_BOOTSTRAP_ORG_NAME")
-        .unwrap_or_else(|_| "Seven Network Manager".to_owned());
+    let organization_name =
+        env::var("SNM_BOOTSTRAP_ORG_NAME").unwrap_or_else(|_| "Seven Network Manager".to_owned());
     let site_slug = env::var("SNM_BOOTSTRAP_SITE_SLUG").unwrap_or_else(|_| "default".to_owned());
-    let site_name = env::var("SNM_BOOTSTRAP_SITE_NAME").unwrap_or_else(|_| "Default Site".to_owned());
+    let site_name =
+        env::var("SNM_BOOTSTRAP_SITE_NAME").unwrap_or_else(|_| "Default Site".to_owned());
     let (organization_id, site_id, routing_domain_id) = database
         .bootstrap_scope(
             &organization_slug,
