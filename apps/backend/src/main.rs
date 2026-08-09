@@ -4,7 +4,7 @@ use async_trait::async_trait;
 use axum::{
     Json, Router,
     extract::State,
-    http::{HeaderName, Request, StatusCode},
+    http::{HeaderMap, HeaderName, StatusCode},
     response::{IntoResponse, Response},
     routing::get,
 };
@@ -118,7 +118,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/ready", get(ready))
         .route("/api/v1/system", get(system))
         .with_state(state)
-        .layer(TimeoutLayer::new(Duration::from_secs(15)))
+        .layer(TimeoutLayer::with_status_code(
+            StatusCode::REQUEST_TIMEOUT,
+            Duration::from_secs(15),
+        ))
         .layer(PropagateRequestIdLayer::new(request_id_header.clone()))
         .layer(SetRequestIdLayer::new(request_id_header, MakeRequestUuid))
         .layer(TraceLayer::new_for_http())
@@ -159,9 +162,8 @@ async fn ready(State(state): State<AppState>) -> Response {
     (StatusCode::OK, Json(body)).into_response()
 }
 
-async fn system<B>(request: Request<B>) -> Response {
-    let request_id = request
-        .headers()
+async fn system(headers: HeaderMap) -> Response {
+    let request_id = headers
         .get("x-request-id")
         .and_then(|value| value.to_str().ok())
         .map(ToOwned::to_owned);
