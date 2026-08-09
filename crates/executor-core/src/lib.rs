@@ -31,7 +31,9 @@ impl NetworkPolicy {
         match address {
             IpAddr::V4(ip) => ip.is_private() || ip.is_loopback() || ip.is_link_local(),
             IpAddr::V6(ip) => {
-                ip.is_loopback() || ip.is_unicast_link_local() || (ip.segments()[0] & 0xfe00) == 0xfc00
+                ip.is_loopback()
+                    || ip.is_unicast_link_local()
+                    || (ip.segments()[0] & 0xfe00) == 0xfc00
             }
         }
     }
@@ -54,7 +56,10 @@ pub enum ExecutorError {
 
 #[async_trait]
 pub trait NetworkExecutor: Send + Sync {
-    async fn tcp_connect(&self, request: TcpConnectRequest) -> Result<TcpConnectResult, ExecutorError>;
+    async fn tcp_connect(
+        &self,
+        request: TcpConnectRequest,
+    ) -> Result<TcpConnectResult, ExecutorError>;
     fn capabilities(&self) -> &'static [Capability];
 }
 
@@ -71,7 +76,10 @@ impl DefaultNetworkExecutor {
 
 #[async_trait]
 impl NetworkExecutor for DefaultNetworkExecutor {
-    async fn tcp_connect(&self, request: TcpConnectRequest) -> Result<TcpConnectResult, ExecutorError> {
+    async fn tcp_connect(
+        &self,
+        request: TcpConnectRequest,
+    ) -> Result<TcpConnectResult, ExecutorError> {
         request
             .validate()
             .map_err(|error| ExecutorError::InvalidRequest(error.to_string()))?;
@@ -96,14 +104,16 @@ impl NetworkExecutor for DefaultNetworkExecutor {
             Ok(Err(error)) => TcpConnectResult {
                 status: ExecutionStatus::Failed,
                 latency_ms: None,
-                error_code: Some(match error.kind() {
-                    std::io::ErrorKind::ConnectionRefused => "connection_refused",
-                    std::io::ErrorKind::PermissionDenied => "permission_denied",
-                    std::io::ErrorKind::NetworkUnreachable => "network_unreachable",
-                    std::io::ErrorKind::HostUnreachable => "host_unreachable",
-                    _ => "transport_error",
-                }
-                .to_owned()),
+                error_code: Some(
+                    match error.kind() {
+                        std::io::ErrorKind::ConnectionRefused => "connection_refused",
+                        std::io::ErrorKind::PermissionDenied => "permission_denied",
+                        std::io::ErrorKind::NetworkUnreachable => "network_unreachable",
+                        std::io::ErrorKind::HostUnreachable => "host_unreachable",
+                        _ => "transport_error",
+                    }
+                    .to_owned(),
+                ),
             },
             Err(_) => TcpConnectResult {
                 status: ExecutionStatus::Failed,
