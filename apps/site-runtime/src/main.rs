@@ -1,11 +1,11 @@
 use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
 use axum::{
+    Json, Router,
     extract::State,
     http::{HeaderMap, StatusCode},
     response::{IntoResponse, Response},
     routing::{get, post},
-    Json, Router,
 };
 use serde::Serialize;
 use snm_domain::TcpConnectRequest;
@@ -48,12 +48,16 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .parse()?;
     let allow_non_loopback = env_flag("SNM_RUNTIME_ALLOW_NON_LOOPBACK");
     if !bind.ip().is_loopback() && !allow_non_loopback {
-        return Err("runtime refuses non-loopback bind unless SNM_RUNTIME_ALLOW_NON_LOOPBACK=true".into());
+        return Err(
+            "runtime refuses non-loopback bind unless SNM_RUNTIME_ALLOW_NON_LOOPBACK=true".into(),
+        );
     }
 
     let token = env::var("SNM_RUNTIME_TOKEN")?;
     if token.len() < 32 || token == "change-me-with-a-long-random-secret" {
-        return Err("SNM_RUNTIME_TOKEN must be a non-default secret with at least 32 characters".into());
+        return Err(
+            "SNM_RUNTIME_TOKEN must be a non-default secret with at least 32 characters".into(),
+        );
     }
 
     let executor = DefaultNetworkExecutor::new(NetworkPolicy {
@@ -106,7 +110,12 @@ async fn capabilities(State(state): State<AppState>, headers: HeaderMap) -> Resp
     }
 
     Json(CapabilityResponse {
-        capabilities: state.executor.capabilities().iter().map(|item| item.as_str()).collect(),
+        capabilities: state
+            .executor
+            .capabilities()
+            .iter()
+            .map(|item| item.as_str())
+            .collect(),
     })
     .into_response()
 }
@@ -124,9 +133,10 @@ async fn tcp_connect(
         Ok(result) => (StatusCode::OK, Json(result)).into_response(),
         Err(error) => {
             let (status, code) = match error {
-                snm_executor_core::ExecutorError::InvalidRequest(_) => {
-                    (StatusCode::UNPROCESSABLE_ENTITY, "invalid_execution_request")
-                }
+                snm_executor_core::ExecutorError::InvalidRequest(_) => (
+                    StatusCode::UNPROCESSABLE_ENTITY,
+                    "invalid_execution_request",
+                ),
                 snm_executor_core::ExecutorError::TargetDenied => {
                     (StatusCode::FORBIDDEN, "target_denied")
                 }
