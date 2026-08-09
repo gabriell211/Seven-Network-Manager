@@ -1,0 +1,16 @@
+{
+  "name": "seven-network-manager",
+  "private": true,
+  "packageManager": "pnpm@11.21.0",
+  "engines": {
+    "node": "24.18.1",
+    "pnpm": "11.21.0"
+  },
+  "scripts": {
+    "build": "pnpm -r build",
+    "dev": "pnpm --filter @seven-network-manager/frontend dev",
+    "lint": "pnpm -r lint",
+    "typecheck": "pnpm -r typecheck",
+    "validate:repo": "python3 scripts/validate_repo.py"
+  }
+}

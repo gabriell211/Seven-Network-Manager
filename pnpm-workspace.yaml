@@ -1,0 +1,13 @@
+packages:
+  - apps/frontend
+  - packages/*
+
+engineStrict: true
+strictPeerDependencies: true
+preferFrozenLockfile: true
+sharedWorkspaceLockfile: true
+strictDepBuilds: true
+blockExoticSubdeps: true
+allowBuilds:
+  sharp: true
+  unrs-resolver: true
