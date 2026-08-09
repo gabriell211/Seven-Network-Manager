@@ -48,6 +48,73 @@ jobs:
         run: cargo clippy --workspace --all-targets --locked -- -D warnings
       - name: Test migrations, domain and runtime contracts
         run: cargo test --workspace --all-targets --locked
+      - name: Build production binaries
+        run: cargo build --workspace --bins --locked
+      - name: Smoke control-plane to site-runtime
+        shell: bash
+        env:
+          SNM_RUNTIME_TOKEN: 0123456789abcdef0123456789abcdef0123456789abcdef
+          SNM_RUNTIME_BIND: 127.0.0.1:9765
+          SNM_RUNTIME_URL: http://127.0.0.1:9765
+          SNM_BACKEND_BIND: 127.0.0.1:8080
+          SNM_RUN_MIGRATIONS: "true"
+          SNM_BOOTSTRAP_ORG_SLUG: ci-smoke
+          SNM_BOOTSTRAP_ORG_NAME: CI Smoke Organization
+          SNM_BOOTSTRAP_SITE_SLUG: default
+          SNM_BOOTSTRAP_SITE_NAME: CI Smoke Site
+        run: |
+          set -euo pipefail
+          target/debug/snm-site-runtime > /tmp/snm-runtime.log 2>&1 &
+          runtime_pid=$!
+          target/debug/snm-backend > /tmp/snm-backend.log 2>&1 &
+          backend_pid=$!
+          cleanup() {
+            kill "$backend_pid" "$runtime_pid" 2>/dev/null || true
+            wait "$backend_pid" "$runtime_pid" 2>/dev/null || true
+          }
+          trap cleanup EXIT
+
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:9765/health >/tmp/runtime-health.json; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent --show-error http://127.0.0.1:9765/health >/tmp/runtime-health.json
+          curl --fail --silent --show-error \
+            -H "Authorization: Bearer ${SNM_RUNTIME_TOKEN}" \
+            http://127.0.0.1:9765/v1/capabilities >/tmp/runtime-capabilities.json
+
+          for _ in $(seq 1 60); do
+            if curl --fail --silent --show-error http://127.0.0.1:8080/health >/tmp/backend-health.json; then
+              break
+            fi
+            sleep 1
+          done
+          curl --fail --silent --show-error http://127.0.0.1:8080/health >/tmp/backend-health.json
+          curl --fail --silent --show-error http://127.0.0.1:8080/ready >/tmp/backend-ready.json
+          curl --fail --silent --show-error http://127.0.0.1:8080/api/v1/system >/tmp/backend-system.json
+
+          python3 - <<'PY'
+          import json
+          from pathlib import Path
+
+          runtime = json.loads(Path('/tmp/runtime-health.json').read_text())
+          capabilities = json.loads(Path('/tmp/runtime-capabilities.json').read_text())
+          backend = json.loads(Path('/tmp/backend-health.json').read_text())
+          ready = json.loads(Path('/tmp/backend-ready.json').read_text())
+          system = json.loads(Path('/tmp/backend-system.json').read_text())
+
+          assert runtime['status'] == 'ok'
+          assert 'runtime.capabilities.read' in capabilities['capabilities']
+          assert 'network.tcp.connect' in capabilities['capabilities']
+          assert backend['status'] == 'ok'
+          assert ready['database'] == 'ready'
+          assert ready['runtime'] == 'ready'
+          assert ready['appliedMigrations'] >= 2
+          assert system['name'] == 'Seven Network Manager'
+          assert system['deploymentMode'] == 'production-mvp-onprem'
+          PY
 
   frontend:
     runs-on: ubuntu-latest
