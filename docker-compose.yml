@@ -132,8 +132,9 @@ networks:
   app:
   data:
     internal: true
+  # This network has no published runtime port, but it must permit outbound
+  # traffic because the runtime is the component that reaches managed LANs.
   execution:
-    internal: true
 
 volumes:
   postgres-data:
