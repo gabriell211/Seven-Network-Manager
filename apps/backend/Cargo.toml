@@ -8,11 +8,14 @@ rust-version.workspace = true
 [dependencies]
 async-trait.workspace = true
 axum.workspace = true
+chrono.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snm-domain = { path = "../../crates/domain" }
+snm-security = { path = "../../crates/security" }
 sqlx.workspace = true
+thiserror.workspace = true
 tokio.workspace = true
 tower-http.workspace = true
 tracing.workspace = true
