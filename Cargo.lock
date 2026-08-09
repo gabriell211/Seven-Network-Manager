@@ -1683,11 +1683,14 @@ version = "0.1.0"
 dependencies = [
  "async-trait",
  "axum",
+ "chrono",
  "reqwest",
  "serde",
  "serde_json",
  "snm-domain",
+ "snm-security",
  "sqlx",
+ "thiserror",
  "tokio",
  "tower-http",
  "tracing",
@@ -1716,6 +1719,18 @@ dependencies = [
  "thiserror",
  "tokio",
  "tracing",
+]
+
+[[package]]
+name = "snm-platform-events"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "serde_json",
+ "sqlx",
+ "tokio",
+ "tracing",
+ "uuid",
 ]
 
 [[package]]

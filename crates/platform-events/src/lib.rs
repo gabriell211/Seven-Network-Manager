@@ -543,18 +543,24 @@ mod tests {
         let Some(pool) = pool().await else { return };
         let store = OutboxStore::new(pool);
         let event_id = Uuid::now_v7();
-        assert!(store
-            .record_consumption("fixture-consumer", event_id)
-            .await
-            .unwrap());
-        assert!(!store
-            .record_consumption("fixture-consumer", event_id)
-            .await
-            .unwrap());
-        assert!(store
-            .record_consumption("another-consumer", event_id)
-            .await
-            .unwrap());
+        assert!(
+            store
+                .record_consumption("fixture-consumer", event_id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !store
+                .record_consumption("fixture-consumer", event_id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            store
+                .record_consumption("another-consumer", event_id)
+                .await
+                .unwrap()
+        );
     }
 
     #[tokio::test]

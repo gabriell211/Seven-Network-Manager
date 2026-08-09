@@ -11,8 +11,8 @@ use serde::{Deserialize, Serialize};
 use snm_security::{
     password::{PasswordPolicy, hash_password, verify_password},
     token::{
-        AccessClaims, AccessTokenKey, IssuedOpaqueToken, decode_access_token,
-        encode_access_token, hash_opaque_token, issue_opaque_token, opaque_token_matches,
+        AccessClaims, AccessTokenKey, IssuedOpaqueToken, decode_access_token, encode_access_token,
+        hash_opaque_token, issue_opaque_token, opaque_token_matches,
     },
 };
 use sqlx::{Postgres, Transaction};
@@ -49,7 +49,7 @@ pub(crate) enum AuthInitError {
 }
 
 #[derive(Debug, Error)]
-enum AuthError {
+pub(crate) enum AuthError {
     #[error("invalid credentials")]
     InvalidCredentials,
     #[error("invalid or expired session")]
@@ -123,7 +123,7 @@ impl AuthService {
     pub(crate) fn from_env(database: Database) -> Result<Self, AuthInitError> {
         let signing_secret = env::var("SNM_ACCESS_TOKEN_KEY")
             .map_err(|_| AuthInitError::MissingOrWeakAccessTokenKey)?;
-        if signing_secret.as_bytes().len() < 32 {
+        if signing_secret.len() < 32 {
             return Err(AuthInitError::MissingOrWeakAccessTokenKey);
         }
         let access_key = AccessTokenKey::new(signing_secret.into_bytes())
@@ -155,7 +155,9 @@ impl AuthService {
         display_name: &str,
         password: &[u8],
     ) -> Result<(), AuthError> {
-        if email.len() > 320 || display_name.trim().is_empty() || organization_slug.trim().is_empty()
+        if email.len() > 320
+            || display_name.trim().is_empty()
+            || organization_slug.trim().is_empty()
         {
             return Err(AuthError::InvalidRequest);
         }
@@ -168,14 +170,13 @@ impl AuthService {
             .await
             .map_err(|_| AuthError::Unavailable)?;
 
-        let organization_id: Uuid = sqlx::query_scalar(
-            "SELECT id FROM organizations WHERE slug = $1",
-        )
-        .bind(organization_slug)
-        .fetch_optional(&mut *tx)
-        .await
-        .map_err(|_| AuthError::Unavailable)?
-        .ok_or(AuthError::InvalidRequest)?;
+        let organization_id: Uuid =
+            sqlx::query_scalar("SELECT id FROM organizations WHERE slug = $1")
+                .bind(organization_slug)
+                .fetch_optional(&mut *tx)
+                .await
+                .map_err(|_| AuthError::Unavailable)?
+                .ok_or(AuthError::InvalidRequest)?;
 
         let user_id: Uuid = sqlx::query_scalar(
             r#"
@@ -356,7 +357,8 @@ impl AuthService {
 
     async fn refresh(&self, presented: &[u8]) -> Result<IssuedSession, AuthError> {
         let presented_hash = hash_opaque_token(presented);
-        let next_refresh = issue_opaque_token(REFRESH_PREFIX).map_err(|_| AuthError::Unavailable)?;
+        let next_refresh =
+            issue_opaque_token(REFRESH_PREFIX).map_err(|_| AuthError::Unavailable)?;
         let csrf = issue_opaque_token(CSRF_PREFIX).map_err(|_| AuthError::Unavailable)?;
         let now = Utc::now();
         let mut tx = self
@@ -469,9 +471,7 @@ impl AuthService {
         .map_err(|_| AuthError::Unavailable)?;
 
         tx.commit().await.map_err(|_| AuthError::Unavailable)?;
-        let permissions = self
-            .permissions_for_user(organization_id, user_id)
-            .await?;
+        let permissions = self.permissions_for_user(organization_id, user_id).await?;
         let identity = SessionIdentity {
             session_id,
             user_id,
@@ -546,15 +546,12 @@ impl AuthService {
             || organization_id != claims.org
             || revoked_at.is_some()
             || expires_at <= now
-            || access_revoked_before
-                .is_some_and(|cutoff| claims.iat <= cutoff.timestamp())
+            || access_revoked_before.is_some_and(|cutoff| claims.iat <= cutoff.timestamp())
         {
             return Err(AuthError::InvalidSession);
         }
 
-        let permissions = self
-            .permissions_for_user(organization_id, user_id)
-            .await?;
+        let permissions = self.permissions_for_user(organization_id, user_id).await?;
         Ok(SessionIdentity {
             session_id: claims.sid,
             user_id,
@@ -581,11 +578,13 @@ impl AuthService {
         .fetch_optional(self.database.pool())
         .await
         .map_err(|_| AuthError::Unavailable)?;
-        Ok(row.map(|(user_id, organization_id, password_hash)| LoginUser {
-            user_id,
-            organization_id,
-            password_hash,
-        }))
+        Ok(
+            row.map(|(user_id, organization_id, password_hash)| LoginUser {
+                user_id,
+                organization_id,
+                password_hash,
+            }),
+        )
     }
 
     async fn permissions_for_user(
@@ -679,10 +678,12 @@ impl AuthService {
         let mut headers = HeaderMap::new();
         let secure = if self.cookie_secure { "; Secure" } else { "" };
         for name in [self.refresh_cookie_name(), self.csrf_cookie_name()] {
-            let http_only = if name.contains("refresh") { "; HttpOnly" } else { "" };
-            let value = format!(
-                "{name}=; Path=/; SameSite=Strict; Max-Age=0{http_only}{secure}"
-            );
+            let http_only = if name.contains("refresh") {
+                "; HttpOnly"
+            } else {
+                ""
+            };
+            let value = format!("{name}=; Path=/; SameSite=Strict; Max-Age=0{http_only}{secure}");
             if let Ok(value) = HeaderValue::from_str(&value) {
                 headers.append(header::SET_COOKIE, value);
             }
@@ -791,7 +792,10 @@ fn csrf_valid(headers: &HeaderMap, cookie_name: &str) -> bool {
     let Some(cookie) = cookie_value(headers, cookie_name) else {
         return false;
     };
-    let Some(header_value) = headers.get(CSRF_HEADER).and_then(|value| value.to_str().ok()) else {
+    let Some(header_value) = headers
+        .get(CSRF_HEADER)
+        .and_then(|value| value.to_str().ok())
+    else {
         return false;
     };
     let expected = hash_opaque_token(cookie.as_bytes());
@@ -854,12 +858,5 @@ fn auth_error_response(error: AuthError) -> Response {
             )
         }
     };
-    (
-        status,
-        Json(AuthErrorResponse {
-            code,
-            message,
-        }),
-    )
-        .into_response()
+    (status, Json(AuthErrorResponse { code, message })).into_response()
 }
