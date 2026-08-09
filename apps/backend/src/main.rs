@@ -304,7 +304,11 @@ async fn ready(State(state): State<AppState>) -> Response {
         RuntimeHealth::Ready => "ready",
         RuntimeHealth::Unavailable => "unavailable",
     };
-    let redis_status = if redis.is_ok() { "ready" } else { "unavailable" };
+    let redis_status = if redis.is_ok() {
+        "ready"
+    } else {
+        "unavailable"
+    };
 
     let database = match database {
         Ok(health) => health,
