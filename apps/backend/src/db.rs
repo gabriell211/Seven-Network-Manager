@@ -1,7 +1,8 @@
 use std::time::Duration;
 
 use serde::Serialize;
-use sqlx::{PgPool, Row, postgres::PgPoolOptions};
+use sqlx::postgres::PgPoolOptions;
+use sqlx::PgPool;
 use uuid::Uuid;
 
 #[derive(Clone)]
@@ -14,20 +15,6 @@ pub struct Database {
 pub struct DatabaseHealth {
     pub connected: bool,
     pub migration_count: i64,
-}
-
-#[derive(Debug, Clone, Serialize)]
-#[serde(rename_all = "camelCase")]
-pub struct DeviceSummary {
-    pub id: Uuid,
-    pub organization_id: Uuid,
-    pub site_id: Uuid,
-    pub lifecycle_state: String,
-    pub display_name: Option<String>,
-    pub vendor: Option<String>,
-    pub model: Option<String>,
-    pub serial_number: Option<String>,
-    pub version: i64,
 }
 
 impl Database {
@@ -58,48 +45,6 @@ impl Database {
             connected: true,
             migration_count,
         })
-    }
-
-    pub async fn list_devices(
-        &self,
-        organization_id: Uuid,
-        site_id: Option<Uuid>,
-        limit: i64,
-        offset: i64,
-    ) -> Result<Vec<DeviceSummary>, sqlx::Error> {
-        let rows = sqlx::query(
-            r#"
-            SELECT id, organization_id, site_id, lifecycle_state, display_name,
-                   vendor, model, serial_number, version
-            FROM devices
-            WHERE organization_id = $1
-              AND ($2::uuid IS NULL OR site_id = $2)
-            ORDER BY updated_at DESC, id
-            LIMIT $3 OFFSET $4
-            "#,
-        )
-        .bind(organization_id)
-        .bind(site_id)
-        .bind(limit.clamp(1, 250))
-        .bind(offset.max(0))
-        .fetch_all(&self.pool)
-        .await?;
-
-        rows.into_iter()
-            .map(|row| {
-                Ok(DeviceSummary {
-                    id: row.try_get("id")?,
-                    organization_id: row.try_get("organization_id")?,
-                    site_id: row.try_get("site_id")?,
-                    lifecycle_state: row.try_get("lifecycle_state")?,
-                    display_name: row.try_get("display_name")?,
-                    vendor: row.try_get("vendor")?,
-                    model: row.try_get("model")?,
-                    serial_number: row.try_get("serial_number")?,
-                    version: row.try_get("version")?,
-                })
-            })
-            .collect()
     }
 
     pub async fn bootstrap_scope(
@@ -198,12 +143,21 @@ mod tests {
         .await
         .expect("insert device");
 
-        let devices = database
-            .list_devices(organization_id, Some(site_id), 50, 0)
-            .await
-            .expect("list devices");
-        assert_eq!(devices.len(), 1);
-        assert_eq!(devices[0].lifecycle_state, "pending_review");
+        let lifecycle_state: String = sqlx::query_scalar(
+            r#"
+            SELECT lifecycle_state
+            FROM devices
+            WHERE organization_id = $1 AND site_id = $2
+            ORDER BY updated_at DESC, id
+            LIMIT 1
+            "#,
+        )
+        .bind(organization_id)
+        .bind(site_id)
+        .fetch_one(&database.pool)
+        .await
+        .expect("query scoped inventory");
+        assert_eq!(lifecycle_state, "pending_review");
     }
 
     #[tokio::test]
