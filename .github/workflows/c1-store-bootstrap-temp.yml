@@ -67,6 +67,14 @@ jobs:
                   )
               path.write_text(updated)
 
+          identity_store = Path('crates/identity-store/src/lib.rs')
+          identity_text = identity_store.read_text()
+          identity_old = '        Ok(row_to_account(row)?)'
+          identity_new = '        row_to_account(row)'
+          if identity_text.count(identity_old) != 1:
+              raise SystemExit('identity-store: expected exactly one needless Ok/? expression')
+          identity_store.write_text(identity_text.replace(identity_old, identity_new, 1))
+
           inventory_store = Path('crates/inventory-store/src/lib.rs')
           text = inventory_store.read_text()
           old = '                builder.push(" OR di.normalized_value LIKE ");'
