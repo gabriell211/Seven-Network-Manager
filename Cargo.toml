@@ -6,6 +6,7 @@ members = [
   "crates/domain",
   "crates/executor-core",
   "crates/identity-store",
+  "crates/observability",
   "crates/platform-events",
   "crates/security",
   "crates/security-store",
@@ -27,6 +28,9 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 hmac = "0.12"
 ipnet = { version = "2", features = ["serde"] }
+opentelemetry = { version = "0.32", features = ["metrics", "trace"] }
+opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "metrics", "reqwest-rustls", "trace"] }
+opentelemetry_sdk = { version = "0.32", features = ["metrics", "rt-tokio", "trace"] }
 rand = "0.8"
 reqwest = { version = "0.12", default-features = false, features = ["json", "rustls-tls"] }
 serde = { version = "1", features = ["derive"] }
@@ -39,6 +43,7 @@ thiserror = "2"
 tokio = { version = "1", features = ["macros", "net", "rt-multi-thread", "signal", "sync", "time"] }
 tower-http = { version = "0.6", features = ["catch-panic", "request-id", "timeout", "trace"] }
 tracing = "0.1"
+tracing-opentelemetry = "0.33"
 tracing-subscriber = { version = "0.3", features = ["env-filter", "json"] }
 uuid = { version = "1", features = ["serde", "v7"] }
 zeroize = "1"
