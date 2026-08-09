@@ -295,10 +295,13 @@ pub fn redact_json(value: &Value) -> Value {
 }
 
 pub fn is_sensitive_key(key: &str) -> bool {
-    let normalized = key
+    let canonical: String = key
         .trim()
-        .to_ascii_lowercase()
-        .replace(['-', '.'], "_");
+        .chars()
+        .filter(|character| character.is_ascii_alphanumeric())
+        .map(|character| character.to_ascii_lowercase())
+        .collect();
+
     [
         "password",
         "passwd",
@@ -308,14 +311,14 @@ pub fn is_sensitive_key(key: &str) -> bool {
         "cookie",
         "csrf",
         "community",
-        "private_key",
-        "client_secret",
-        "refresh_token",
-        "access_token",
-        "api_key",
+        "privatekey",
+        "clientsecret",
+        "refreshtoken",
+        "accesstoken",
+        "apikey",
     ]
     .iter()
-    .any(|needle| normalized == *needle || normalized.ends_with(&format!("_{needle}")))
+    .any(|needle| canonical == *needle || canonical.ends_with(needle))
 }
 
 fn env_flag(name: &str) -> bool {
@@ -347,17 +350,45 @@ mod tests {
             "password": "sentinel-password",
             "nested": {
                 "accessToken": "sentinel-token",
+                "refresh_token": "sentinel-refresh",
+                "client-secret": "sentinel-client-secret",
+                "api.key": "sentinel-api-key",
                 "authorization": "Bearer sentinel"
             },
             "items": [{"private-key": "sentinel-key"}]
         });
         let redacted = redact_json(&value);
         let serialized = serde_json::to_string(&redacted).unwrap();
-        assert!(!serialized.contains("sentinel-password"));
-        assert!(!serialized.contains("sentinel-token"));
-        assert!(!serialized.contains("Bearer sentinel"));
-        assert!(!serialized.contains("sentinel-key"));
+        for sentinel in [
+            "sentinel-password",
+            "sentinel-token",
+            "sentinel-refresh",
+            "sentinel-client-secret",
+            "sentinel-api-key",
+            "Bearer sentinel",
+            "sentinel-key",
+        ] {
+            assert!(!serialized.contains(sentinel));
+        }
         assert_eq!(redacted["username"], "operator");
+    }
+
+    #[test]
+    fn sensitive_key_detection_is_naming_style_independent() {
+        for key in [
+            "accessToken",
+            "access_token",
+            "access-token",
+            "refreshToken",
+            "clientSecret",
+            "private.key",
+            "apiKey",
+            "SNMPCommunity",
+        ] {
+            assert!(is_sensitive_key(key), "expected {key} to be sensitive");
+        }
+        assert!(!is_sensitive_key("tokenBucketCapacity"));
+        assert!(!is_sensitive_key("communityName"));
     }
 
     #[test]
