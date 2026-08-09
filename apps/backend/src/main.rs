@@ -1,6 +1,5 @@
 mod auth;
 mod db;
-mod outbox;
 
 use std::{env, net::SocketAddr, sync::Arc, time::Duration};
 
