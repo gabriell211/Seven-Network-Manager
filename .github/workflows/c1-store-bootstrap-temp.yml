@@ -34,7 +34,7 @@ jobs:
         with:
           ref: ${{ github.head_ref }}
           fetch-depth: 0
-      - name: Repair inventory validation fixtures and search normalization
+      - name: Repair deterministic C1 validation fixtures
         shell: bash
         run: |
           set -euo pipefail
@@ -42,6 +42,8 @@ jobs:
           import re
           from pathlib import Path
 
+          # Inventory store tests model internal/system mutations. They must not
+          # invent a session UUID that violates the audit FK.
           principal_paths = [
               Path('crates/inventory-store/src/lib.rs'),
               Path('crates/inventory-store/tests/search.rs'),
@@ -67,6 +69,7 @@ jobs:
                   )
               path.write_text(updated)
 
+          # Search is separator-tolerant without weakening canonical identity.
           inventory_store = Path('crates/inventory-store/src/lib.rs')
           text = inventory_store.read_text()
           old = '                builder.push(" OR di.normalized_value LIKE ");'
@@ -80,6 +83,51 @@ jobs:
                   f'{inventory_store}: expected exactly one normalized identifier search clause'
               )
           inventory_store.write_text(text.replace(old, new, 1))
+
+          # Outbox tests share the same PostgreSQL instance with other workspace
+          # tests. Serialize only the outbox claim tests and make the fixture
+          # event the oldest eligible event so global production claiming stays
+          # unchanged while the tests remain deterministic.
+          platform_events = Path('crates/platform-events/src/lib.rs')
+          text = platform_events.read_text()
+
+          imports_old = '''    use std::sync::atomic::{AtomicUsize, Ordering};\n\n    use serde_json::json;\n\n    use super::*;'''
+          imports_new = '''    use serde_json::json;\n    use tokio::sync::Mutex;\n\n    use super::*;\n\n    static TEST_LOCK: Mutex<()> = Mutex::const_new(());'''
+          if text.count(imports_old) != 1:
+              raise SystemExit('platform-events: expected one test import block')
+          text = text.replace(imports_old, imports_new, 1)
+
+          publisher_old = '''    struct CountingPublisher {\n        calls: AtomicUsize,\n        fail_first: bool,\n    }\n\n    #[async_trait]\n    impl EventPublisher for CountingPublisher {\n        async fn publish(&self, _event: &OutboxEvent) -> Result<(), PublishError> {\n            let call = self.calls.fetch_add(1, Ordering::SeqCst);\n            if self.fail_first && call == 0 {\n                Err(PublishError {\n                    code: "fixture_failure".into(),\n                })\n            } else {\n                Ok(())\n            }\n        }\n    }'''
+          publisher_new = '''    struct TargetPublisher {\n        fail_event: Uuid,\n    }\n\n    #[async_trait]\n    impl EventPublisher for TargetPublisher {\n        async fn publish(&self, event: &OutboxEvent) -> Result<(), PublishError> {\n            if event.id == self.fail_event {\n                Err(PublishError {\n                    code: "fixture_failure".into(),\n                })\n            } else {\n                Ok(())\n            }\n        }\n    }'''
+          if text.count(publisher_old) != 1:
+              raise SystemExit('platform-events: expected one counting publisher block')
+          text = text.replace(publisher_old, publisher_new, 1)
+
+          helper_anchor = '''        tx.commit().await.unwrap();\n        event\n    }\n\n    #[tokio::test]\n    async fn event_survives_commit_before_publication_and_is_claimed_once() {'''
+          helper_replacement = '''        tx.commit().await.unwrap();\n        event\n    }\n\n    async fn prioritize_event(pool: &PgPool, event_id: Uuid) {\n        sqlx::query(\n            "UPDATE outbox_events SET available_at = now() - interval '1 day' WHERE id = $1",\n        )\n        .bind(event_id)\n        .execute(pool)\n        .await\n        .unwrap();\n    }\n\n    #[tokio::test]\n    async fn event_survives_commit_before_publication_and_is_claimed_once() {'''
+          if text.count(helper_anchor) != 1:
+              raise SystemExit('platform-events: expected committed_event helper anchor')
+          text = text.replace(helper_anchor, helper_replacement, 1)
+
+          first_old = '''        let Some(pool) = pool().await else { return };\n        let organization_id = organization(&pool).await;\n        let event = committed_event(&pool, organization_id).await;\n        let store = OutboxStore::new(pool);\n\n        let first = store\n            .claim("worker-a", 10, Duration::from_secs(30))'''
+          first_new = '''        let _guard = TEST_LOCK.lock().await;\n        let Some(pool) = pool().await else { return };\n        let organization_id = organization(&pool).await;\n        let event = committed_event(&pool, organization_id).await;\n        prioritize_event(&pool, event.id).await;\n        let store = OutboxStore::new(pool);\n\n        let first = store\n            .claim("worker-a", 1, Duration::from_secs(30))'''
+          if text.count(first_old) != 1:
+              raise SystemExit('platform-events: expected first claim fixture')
+          text = text.replace(first_old, first_new, 1)
+
+          consumer_old = '''    async fn consumer_deduplication_is_idempotent() {\n        let Some(pool) = pool().await else { return };'''
+          consumer_new = '''    async fn consumer_deduplication_is_idempotent() {\n        let _guard = TEST_LOCK.lock().await;\n        let Some(pool) = pool().await else { return };'''
+          if text.count(consumer_old) != 1:
+              raise SystemExit('platform-events: expected consumer fixture')
+          text = text.replace(consumer_old, consumer_new, 1)
+
+          failed_old = '''        let Some(pool) = pool().await else { return };\n        let organization_id = organization(&pool).await;\n        let event = committed_event(&pool, organization_id).await;\n        let store = OutboxStore::new(pool.clone());\n        let publisher = Arc::new(CountingPublisher {\n            calls: AtomicUsize::new(0),\n            fail_first: true,\n        });\n        let dispatcher = OutboxDispatcher::new(store, publisher, "worker-retry", 3, 2).unwrap();\n        dispatcher.dispatch_once(10).await.unwrap();'''
+          failed_new = '''        let _guard = TEST_LOCK.lock().await;\n        let Some(pool) = pool().await else { return };\n        let organization_id = organization(&pool).await;\n        let event = committed_event(&pool, organization_id).await;\n        prioritize_event(&pool, event.id).await;\n        let store = OutboxStore::new(pool.clone());\n        let publisher = Arc::new(TargetPublisher { fail_event: event.id });\n        let dispatcher = OutboxDispatcher::new(store, publisher, "worker-retry", 3, 2).unwrap();\n        dispatcher.dispatch_once(1).await.unwrap();'''
+          if text.count(failed_old) != 1:
+              raise SystemExit('platform-events: expected failed publication fixture')
+          text = text.replace(failed_old, failed_new, 1)
+
+          platform_events.write_text(text)
           PY
       - name: Resolve canonical Cargo graph
         run: cargo generate-lockfile
