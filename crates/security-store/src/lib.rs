@@ -80,9 +80,10 @@ impl CredentialVaultStore {
             username: input.username.map(|value| value.trim().to_owned()),
             metadata: input.metadata,
             active: true,
-            key_version: Some(i32::try_from(encrypted.key_version).map_err(|_| {
-                CredentialStoreError::InvalidStoredCiphertext
-            })?),
+            key_version: Some(
+                i32::try_from(encrypted.key_version)
+                    .map_err(|_| CredentialStoreError::InvalidStoredCiphertext)?,
+            ),
         })
     }
 
@@ -288,9 +289,10 @@ async fn insert_ciphertext(
         "#,
     )
     .bind(profile_id)
-    .bind(i32::try_from(encrypted.key_version).map_err(|_| {
-        CredentialStoreError::InvalidStoredCiphertext
-    })?)
+    .bind(
+        i32::try_from(encrypted.key_version)
+            .map_err(|_| CredentialStoreError::InvalidStoredCiphertext)?,
+    )
     .bind(encrypted.wrapped_dek_nonce.to_vec())
     .bind(&encrypted.wrapped_dek)
     .bind(encrypted.data_nonce.to_vec())
@@ -328,9 +330,10 @@ async fn update_ciphertext_tx(
         "#,
     )
     .bind(profile_id)
-    .bind(i32::try_from(encrypted.key_version).map_err(|_| {
-        CredentialStoreError::InvalidStoredCiphertext
-    })?)
+    .bind(
+        i32::try_from(encrypted.key_version)
+            .map_err(|_| CredentialStoreError::InvalidStoredCiphertext)?,
+    )
     .bind(encrypted.wrapped_dek_nonce.to_vec())
     .bind(&encrypted.wrapped_dek)
     .bind(encrypted.data_nonce.to_vec())
@@ -344,7 +347,9 @@ async fn update_ciphertext_tx(
     Ok(())
 }
 
-fn row_to_summary(row: sqlx::postgres::PgRow) -> Result<CredentialProfileSummary, CredentialStoreError> {
+fn row_to_summary(
+    row: sqlx::postgres::PgRow,
+) -> Result<CredentialProfileSummary, CredentialStoreError> {
     Ok(CredentialProfileSummary {
         id: row.try_get("id")?,
         organization_id: row.try_get("organization_id")?,
@@ -455,8 +460,16 @@ mod tests {
         .unwrap();
         let wrapped_dek: Vec<u8> = row.try_get("wrapped_dek").unwrap();
         let ciphertext: Vec<u8> = row.try_get("ciphertext").unwrap();
-        assert!(!wrapped_dek.windows(sentinel.len()).any(|value| value == sentinel));
-        assert!(!ciphertext.windows(sentinel.len()).any(|value| value == sentinel));
+        assert!(
+            !wrapped_dek
+                .windows(sentinel.len())
+                .any(|value| value == sentinel)
+        );
+        assert!(
+            !ciphertext
+                .windows(sentinel.len())
+                .any(|value| value == sentinel)
+        );
         assert_eq!(
             store
                 .resolve_secret(organization_id, summary.id)
@@ -486,14 +499,18 @@ mod tests {
             .unwrap();
 
         let new_store = CredentialVaultStore::new(pool.clone(), ring(2)).unwrap();
-        assert!(new_store
-            .rotate_profile_key(organization_id, summary.id)
-            .await
-            .unwrap());
-        assert!(!new_store
-            .rotate_profile_key(organization_id, summary.id)
-            .await
-            .unwrap());
+        assert!(
+            new_store
+                .rotate_profile_key(organization_id, summary.id)
+                .await
+                .unwrap()
+        );
+        assert!(
+            !new_store
+                .rotate_profile_key(organization_id, summary.id)
+                .await
+                .unwrap()
+        );
         let key_version: i32 = sqlx::query_scalar(
             "SELECT key_version FROM credential_ciphertexts WHERE credential_profile_id = $1",
         )

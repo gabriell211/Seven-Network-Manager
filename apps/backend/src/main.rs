@@ -200,8 +200,8 @@ async fn maybe_bootstrap_admin(auth: &AuthService) -> Result<(), Box<dyn std::er
         .ok_or("SNM_BOOTSTRAP_ORG_SLUG is required when bootstrapping an administrator")?;
     let password = non_empty_env("SNM_BOOTSTRAP_ADMIN_PASSWORD")
         .ok_or("SNM_BOOTSTRAP_ADMIN_PASSWORD is required when bootstrapping an administrator")?;
-    let display_name = non_empty_env("SNM_BOOTSTRAP_ADMIN_NAME")
-        .unwrap_or_else(|| "SNM Administrator".to_owned());
+    let display_name =
+        non_empty_env("SNM_BOOTSTRAP_ADMIN_NAME").unwrap_or_else(|| "SNM Administrator".to_owned());
     auth.bootstrap_admin(
         &organization_slug,
         &email,

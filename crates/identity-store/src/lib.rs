@@ -173,7 +173,8 @@ impl ServiceAccountStore {
         token: &[u8],
         source_ip: IpAddr,
     ) -> Result<ServicePrincipal, IdentityStoreError> {
-        let token_text = std::str::from_utf8(token).map_err(|_| IdentityStoreError::InvalidToken)?;
+        let token_text =
+            std::str::from_utf8(token).map_err(|_| IdentityStoreError::InvalidToken)?;
         if !token_text.starts_with("snm_sa_") || token_text.len() > 256 {
             return Err(IdentityStoreError::InvalidToken);
         }
@@ -295,8 +296,12 @@ fn validate_cidrs(cidrs: &[String]) -> Result<(), IdentityStoreError> {
         let Some((address, prefix)) = cidr.split_once('/') else {
             return Err(IdentityStoreError::InvalidInput);
         };
-        let address: IpAddr = address.parse().map_err(|_| IdentityStoreError::InvalidInput)?;
-        let prefix: u8 = prefix.parse().map_err(|_| IdentityStoreError::InvalidInput)?;
+        let address: IpAddr = address
+            .parse()
+            .map_err(|_| IdentityStoreError::InvalidInput)?;
+        let prefix: u8 = prefix
+            .parse()
+            .map_err(|_| IdentityStoreError::InvalidInput)?;
         let valid = match address {
             IpAddr::V4(_) => prefix <= 32,
             IpAddr::V6(_) => prefix <= 128,
@@ -398,7 +403,10 @@ mod tests {
         let Some(pool) = pool().await else { return };
         let organization_id = organization(&pool).await;
         let store = ServiceAccountStore::new(pool.clone());
-        let account = store.create_account(organization_id, "collector").await.unwrap();
+        let account = store
+            .create_account(organization_id, "collector")
+            .await
+            .unwrap();
         let role = role_with_permission(&pool, organization_id, "devices.view").await;
         store
             .bind_role(organization_id, account.id, role, None)
@@ -417,13 +425,19 @@ mod tests {
             .await
             .unwrap();
         let principal = store
-            .authenticate(credential.token.expose_once().as_bytes(), "10.10.10.10".parse().unwrap())
+            .authenticate(
+                credential.token.expose_once().as_bytes(),
+                "10.10.10.10".parse().unwrap(),
+            )
             .await
             .unwrap();
         assert_eq!(principal.effective_permissions, vec!["devices.view"]);
         assert!(matches!(
             store
-                .authenticate(credential.token.expose_once().as_bytes(), "192.168.1.10".parse().unwrap())
+                .authenticate(
+                    credential.token.expose_once().as_bytes(),
+                    "192.168.1.10".parse().unwrap()
+                )
                 .await,
             Err(IdentityStoreError::InvalidToken)
         ));
@@ -434,7 +448,10 @@ mod tests {
         let Some(pool) = pool().await else { return };
         let organization_id = organization(&pool).await;
         let store = ServiceAccountStore::new(pool.clone());
-        let account = store.create_account(organization_id, "automation").await.unwrap();
+        let account = store
+            .create_account(organization_id, "automation")
+            .await
+            .unwrap();
         let role = role_with_permission(&pool, organization_id, "devices.view").await;
         store
             .bind_role(organization_id, account.id, role, None)
@@ -454,29 +471,49 @@ mod tests {
             .await
             .unwrap();
 
-        assert!(store
-            .authenticate(old.token.expose_once().as_bytes(), "127.0.0.1".parse().unwrap())
-            .await
-            .is_ok());
-        assert!(store
-            .authenticate(new.token.expose_once().as_bytes(), "127.0.0.1".parse().unwrap())
-            .await
-            .is_ok());
+        assert!(
+            store
+                .authenticate(
+                    old.token.expose_once().as_bytes(),
+                    "127.0.0.1".parse().unwrap()
+                )
+                .await
+                .is_ok()
+        );
+        assert!(
+            store
+                .authenticate(
+                    new.token.expose_once().as_bytes(),
+                    "127.0.0.1".parse().unwrap()
+                )
+                .await
+                .is_ok()
+        );
 
-        assert!(store
-            .revoke_credential(organization_id, account.id, old.credential_id)
-            .await
-            .unwrap());
+        assert!(
+            store
+                .revoke_credential(organization_id, account.id, old.credential_id)
+                .await
+                .unwrap()
+        );
         assert!(matches!(
             store
-                .authenticate(old.token.expose_once().as_bytes(), "127.0.0.1".parse().unwrap())
+                .authenticate(
+                    old.token.expose_once().as_bytes(),
+                    "127.0.0.1".parse().unwrap()
+                )
                 .await,
             Err(IdentityStoreError::InvalidToken)
         ));
-        assert!(store
-            .authenticate(new.token.expose_once().as_bytes(), "127.0.0.1".parse().unwrap())
-            .await
-            .is_ok());
+        assert!(
+            store
+                .authenticate(
+                    new.token.expose_once().as_bytes(),
+                    "127.0.0.1".parse().unwrap()
+                )
+                .await
+                .is_ok()
+        );
     }
 
     #[tokio::test]
@@ -484,7 +521,10 @@ mod tests {
         let Some(pool) = pool().await else { return };
         let organization_id = organization(&pool).await;
         let store = ServiceAccountStore::new(pool.clone());
-        let account = store.create_account(organization_id, "no-plaintext").await.unwrap();
+        let account = store
+            .create_account(organization_id, "no-plaintext")
+            .await
+            .unwrap();
         let credential = store
             .issue_credential(
                 organization_id,
@@ -497,13 +537,12 @@ mod tests {
             )
             .await
             .unwrap();
-        let persisted: Vec<u8> = sqlx::query_scalar(
-            "SELECT token_hash FROM service_account_credentials WHERE id = $1",
-        )
-        .bind(credential.credential_id)
-        .fetch_one(&pool)
-        .await
-        .unwrap();
+        let persisted: Vec<u8> =
+            sqlx::query_scalar("SELECT token_hash FROM service_account_credentials WHERE id = $1")
+                .bind(credential.credential_id)
+                .fetch_one(&pool)
+                .await
+                .unwrap();
         assert_ne!(persisted, credential.token.expose_once().as_bytes());
     }
 }
