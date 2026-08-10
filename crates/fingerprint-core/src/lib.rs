@@ -194,9 +194,9 @@ pub fn classify(
     classification
         .service_hints
         .sort_by_key(|hint| (hint.port, hint.source.clone()));
-    classification.service_hints.dedup_by(|left, right| {
-        left.port == right.port && left.source == right.source
-    });
+    classification
+        .service_hints
+        .dedup_by(|left, right| left.port == right.port && left.source == right.source);
     classification.suggestions.sort_by(|left, right| {
         left.field
             .as_str()
@@ -351,9 +351,9 @@ mod tests {
         assert!(classification.suggestions.iter().any(|item| {
             item.field == FingerprintField::Hostname && item.value == "printer-01.example"
         }));
-        assert!(!classification
-            .suggestions
-            .iter()
-            .any(|item| matches!(item.field, FingerprintField::OsFamily | FingerprintField::DeviceType)));
+        assert!(!classification.suggestions.iter().any(|item| matches!(
+            item.field,
+            FingerprintField::OsFamily | FingerprintField::DeviceType
+        )));
     }
 }
