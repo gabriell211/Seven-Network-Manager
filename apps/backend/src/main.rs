@@ -3,13 +3,15 @@ mod authorization;
 mod config;
 mod context_api;
 mod db;
+mod discovery_api;
+mod discovery_worker;
 mod inventory_api;
 mod ipam_api;
 mod redis_state;
+mod runtime_client;
 
-use std::{env, sync::Arc, time::Duration};
+use std::{env, sync::Arc};
 
-use async_trait::async_trait;
 use auth::AuthService;
 use authorization::AuthorizationService;
 use axum::{
@@ -23,8 +25,11 @@ use axum::{
 };
 use config::BackendConfig;
 use db::Database;
+use discovery_worker::DiscoveryWorker;
 use redis_state::RedisState;
+use runtime_client::{HttpRuntimeClient, RuntimeHealth, RuntimePort};
 use serde::Serialize;
+use snm_discovery_store::DiscoveryStore;
 use snm_inventory_store::InventoryStore;
 use snm_ipam_store::IpamStore;
 use snm_observability::{CorrelationContext, TelemetryConfig};
@@ -40,6 +45,7 @@ struct AppState {
     authorization: Arc<AuthorizationService>,
     inventory: InventoryStore,
     ipam: IpamStore,
+    discovery: DiscoveryStore,
     inventory_require_approval: bool,
 }
 
@@ -66,50 +72,6 @@ struct SystemResponse {
     name: &'static str,
     version: &'static str,
     deployment_mode: &'static str,
-}
-
-#[derive(Debug)]
-enum RuntimeHealth {
-    Ready,
-    Unavailable,
-}
-
-#[async_trait]
-trait RuntimePort: Send + Sync {
-    async fn health(&self) -> RuntimeHealth;
-}
-
-#[derive(Clone)]
-struct HttpRuntimeClient {
-    client: reqwest::Client,
-    base_url: String,
-}
-
-impl HttpRuntimeClient {
-    fn new(base_url: String) -> Result<Self, reqwest::Error> {
-        Ok(Self {
-            client: reqwest::Client::builder()
-                .connect_timeout(Duration::from_secs(1))
-                .timeout(Duration::from_secs(2))
-                .build()?,
-            base_url,
-        })
-    }
-}
-
-#[async_trait]
-impl RuntimePort for HttpRuntimeClient {
-    async fn health(&self) -> RuntimeHealth {
-        match self
-            .client
-            .get(format!("{}/health", self.base_url))
-            .send()
-            .await
-        {
-            Ok(response) if response.status().is_success() => RuntimeHealth::Ready,
-            _ => RuntimeHealth::Unavailable,
-        }
-    }
 }
 
 #[tokio::main]
@@ -141,15 +103,30 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let authorization = Arc::new(AuthorizationService::from_env(database.clone())?);
     let inventory = InventoryStore::new(database.pool().clone());
     let ipam = IpamStore::new(database.pool().clone());
+    let discovery = DiscoveryStore::new(database.pool().clone());
+    let runtime: Arc<dyn RuntimePort> = Arc::new(HttpRuntimeClient::new(
+        config.runtime_url.clone(),
+        config.runtime_token.clone(),
+    )?);
+
+    let _discovery_worker = DiscoveryWorker::new(
+        discovery.clone(),
+        runtime.clone(),
+        inventory.clone(),
+        ipam.clone(),
+        database.pool().clone(),
+    )
+    .spawn();
 
     let state = AppState {
-        runtime: Arc::new(HttpRuntimeClient::new(config.runtime_url.clone())?),
+        runtime,
         database,
         redis,
         auth,
         authorization,
         inventory,
         ipam,
+        discovery,
         inventory_require_approval: config.inventory_require_approval,
     };
 
@@ -189,6 +166,36 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/api/v1/sites/{site_id}/ipam/addresses/{address_id}",
             axum::routing::patch(ipam_api::update_address).delete(ipam_api::delete_address),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/discovery/scopes",
+            get(discovery_api::list_scopes).post(discovery_api::create_scope),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/discovery/scopes/{scope_id}",
+            get(discovery_api::get_scope)
+                .patch(discovery_api::update_scope)
+                .delete(discovery_api::delete_scope),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/discovery/scopes/{scope_id}/runs",
+            post(discovery_api::create_run),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/discovery/runs",
+            get(discovery_api::list_runs),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/discovery/runs/{run_id}",
+            get(discovery_api::get_run),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/discovery/runs/{run_id}/cancel",
+            post(discovery_api::cancel_run),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/discovery/runs/{run_id}/results",
+            get(discovery_api::list_results),
         )
         .with_state(state)
         .layer(DefaultBodyLimit::max(config.body_limit_bytes))
