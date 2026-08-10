@@ -18,11 +18,12 @@ struct OrganizationView {
     name: String,
 }
 
-#[derive(Debug, Serialize)]
+#[derive(Debug, Clone, Serialize)]
 #[serde(rename_all = "camelCase")]
 struct RoutingDomainView {
     id: Uuid,
     name: String,
+    is_default: bool,
 }
 
 #[derive(Debug, Serialize)]
@@ -33,6 +34,7 @@ struct SiteView {
     name: String,
     timezone: String,
     default_routing_domain: Option<RoutingDomainView>,
+    routing_domains: Vec<RoutingDomainView>,
     permissions: Vec<String>,
 }
 
@@ -52,7 +54,7 @@ struct ApiErrorBody {
     request_id: String,
 }
 
-type SiteRow = (Uuid, String, String, String, Option<Uuid>, Option<String>);
+type SiteRow = (Uuid, String, String, String);
 
 pub(crate) async fn get_context(
     State(state): State<AppState>,
@@ -93,16 +95,12 @@ pub(crate) async fn get_context(
 
     let rows = match sqlx::query_as::<_, SiteRow>(
         r#"
-        SELECT DISTINCT s.id, s.slug, s.name, s.timezone, rd.id, rd.name
+        SELECT DISTINCT s.id, s.slug, s.name, s.timezone
         FROM sites s
         JOIN role_bindings rb
           ON rb.organization_id = s.organization_id
          AND rb.user_id = $2
          AND (rb.site_id IS NULL OR rb.site_id = s.id)
-        LEFT JOIN routing_domains rd
-          ON rd.organization_id = s.organization_id
-         AND rd.site_id = s.id
-         AND rd.is_default = true
         WHERE s.organization_id = $1
         ORDER BY s.name, s.id
         "#,
@@ -125,7 +123,7 @@ pub(crate) async fn get_context(
     };
 
     let mut sites = Vec::with_capacity(rows.len());
-    for (id, slug, name, timezone, routing_domain_id, routing_domain_name) in rows {
+    for (id, slug, name, timezone) in rows {
         let permissions = match sqlx::query_scalar::<_, String>(
             r#"
             SELECT DISTINCT p.code
@@ -158,16 +156,49 @@ pub(crate) async fn get_context(
             }
         };
 
-        let default_routing_domain = routing_domain_id.map(|domain_id| RoutingDomainView {
-            id: domain_id,
-            name: routing_domain_name.unwrap_or_else(|| "default".to_owned()),
-        });
+        let routing_domains = match sqlx::query_as::<_, (Uuid, String, bool)>(
+            r#"
+            SELECT id, name, is_default
+            FROM routing_domains
+            WHERE organization_id = $1 AND site_id = $2
+            ORDER BY is_default DESC, name, id
+            "#,
+        )
+        .bind(principal.organization_id)
+        .bind(id)
+        .fetch_all(state.database.pool())
+        .await
+        {
+            Ok(rows) => rows
+                .into_iter()
+                .map(|(domain_id, domain_name, is_default)| RoutingDomainView {
+                    id: domain_id,
+                    name: domain_name,
+                    is_default,
+                })
+                .collect::<Vec<_>>(),
+            Err(error) => {
+                tracing::error!(error = %error, site_id = %id, "failed to load site routing domains");
+                return api_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "context_unavailable",
+                    "routing-domain context is temporarily unavailable",
+                    &correlation,
+                );
+            }
+        };
+        let default_routing_domain = routing_domains
+            .iter()
+            .find(|domain| domain.is_default)
+            .cloned();
+
         sites.push(SiteView {
             id,
             slug,
             name,
             timezone,
             default_routing_domain,
+            routing_domains,
             permissions,
         });
     }
