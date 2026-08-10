@@ -5,7 +5,8 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    DiscoveryStoreError, MutationContext, load_scope_in_tx, write_mutation_records,
+    DiscoveryStoreError, MutationContext, MutationRecord, load_scope_in_tx,
+    write_mutation_records,
 };
 
 pub async fn enqueue_due_scheduled_runs(
@@ -13,7 +14,9 @@ pub async fn enqueue_due_scheduled_runs(
     limit: i64,
 ) -> Result<Vec<Uuid>, DiscoveryStoreError> {
     if !(1..=100).contains(&limit) {
-        return Err(DiscoveryStoreError::InvalidInput("scheduler batch size is invalid"));
+        return Err(DiscoveryStoreError::InvalidInput(
+            "scheduler batch size is invalid",
+        ));
     }
     let mut tx = pool.begin().await?;
     let rows = sqlx::query(
@@ -42,15 +45,9 @@ pub async fn enqueue_due_scheduled_runs(
         let scope_id: Uuid = row.try_get("id")?;
         let organization_id: Uuid = row.try_get("organization_id")?;
         let site_id: Uuid = row.try_get("site_id")?;
-        let scope = load_scope_in_tx(
-            &mut tx,
-            organization_id,
-            site_id,
-            scope_id,
-            false,
-        )
-        .await?
-        .ok_or(DiscoveryStoreError::ScopeNotFound)?;
+        let scope = load_scope_in_tx(&mut tx, organization_id, site_id, scope_id, false)
+            .await?
+            .ok_or(DiscoveryStoreError::ScopeNotFound)?;
         let run_id = Uuid::now_v7();
         let correlation_id = Uuid::now_v7();
         let snapshot = serde_json::to_value(&scope)?;
@@ -97,17 +94,19 @@ pub async fn enqueue_due_scheduled_runs(
         write_mutation_records(
             &mut tx,
             &context,
-            "discovery.run.schedule.enqueue",
-            "discovery.run.queued",
-            "discovery_run",
-            run_id,
-            None,
-            Some(json!({
-                "id": run_id,
-                "scopeId": scope_id,
-                "requestKind": "scheduled",
-                "queuedAt": Utc::now(),
-            })),
+            MutationRecord {
+                action: "discovery.run.schedule.enqueue",
+                event_type: "discovery.run.queued",
+                resource_type: "discovery_run",
+                resource_id: run_id,
+                before: None,
+                after: Some(json!({
+                    "id": run_id,
+                    "scopeId": scope_id,
+                    "requestKind": "scheduled",
+                    "queuedAt": Utc::now(),
+                })),
+            },
         )
         .await?;
         queued.push(run_id);
