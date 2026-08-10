@@ -116,8 +116,8 @@ impl DiscoveryScope {
         if self.concurrency_limit == 0 || self.rate_per_second == 0 || self.timeout_ms == 0 {
             return Err("discovery limits must be non-zero");
         }
-        if self.concurrency_limit > 4096 || self.rate_per_second > 65_535 {
-            return Err("discovery limits exceed supported bounds");
+        if self.concurrency_limit > 4096 {
+            return Err("discovery concurrency exceeds supported bounds");
         }
         if self.timeout_ms < 100 || self.timeout_ms > 30_000 {
             return Err("discovery timeout must be between 100 and 30000 milliseconds");
