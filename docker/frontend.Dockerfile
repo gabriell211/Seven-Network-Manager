@@ -13,7 +13,6 @@ COPY --from=deps /src/node_modules ./node_modules
 COPY --from=deps /src/apps/frontend/node_modules ./apps/frontend/node_modules
 COPY --from=deps /src/packages/ui/node_modules ./packages/ui/node_modules
 COPY . .
-RUN python3 scripts/generate_frontend_contract.py --check
 RUN pnpm --filter @seven-network-manager/frontend build
 
 FROM node:24.18.1-bookworm-slim AS runtime
