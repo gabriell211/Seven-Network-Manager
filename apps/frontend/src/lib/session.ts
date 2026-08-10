@@ -21,11 +21,11 @@ export type ApiResult<T> =
   | { ok: false; status: number; error: ErrorEnvelope };
 
 export interface DeviceListFilters {
-  search?: string;
-  lifecycle?: DeviceLifecycle;
-  deviceType?: DeviceType;
-  limit?: number;
-  offset?: number;
+  search?: string | undefined;
+  lifecycle?: DeviceLifecycle | undefined;
+  deviceType?: DeviceType | undefined;
+  limit?: number | undefined;
+  offset?: number | undefined;
 }
 
 async function accessToken(): Promise<string | null> {
