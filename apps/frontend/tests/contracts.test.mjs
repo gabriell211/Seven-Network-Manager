@@ -14,6 +14,10 @@ const requiredPaths = [
   "/sites/{siteId}/devices",
   "/sites/{siteId}/devices/{deviceId}",
   "/sites/{siteId}/devices/{deviceId}/lifecycle",
+  "/sites/{siteId}/ipam/prefixes",
+  "/sites/{siteId}/ipam/prefixes/{prefixId}",
+  "/sites/{siteId}/ipam/addresses",
+  "/sites/{siteId}/ipam/addresses/{addressId}",
 ];
 
 test("versioned OpenAPI contract exposes the implemented control-plane surface", () => {
@@ -22,6 +26,8 @@ test("versioned OpenAPI contract exposes the implemented control-plane surface",
   const error = spec.components.schemas.ErrorEnvelope;
   assert.deepEqual(error.required, ["code", "message"]);
   assert.ok(error.properties.requestId);
+  assert.ok(spec.components.schemas.SiteContext.properties.routingDomains);
+  assert.deepEqual(spec.components.schemas.AddressState.enum, ["available", "reserved", "assigned", "observed", "conflict", "excluded"]);
 });
 
 test("frontend consumes generated contract types instead of handwritten primary DTOs", () => {
@@ -31,6 +37,7 @@ test("frontend consumes generated contract types instead of handwritten primary 
   assert.match(session, /src\/generated\/api-contract/);
   assert.doesNotMatch(api, /interface\s+SystemStatus/);
   assert.doesNotMatch(session, /interface\s+Device\b/);
+  assert.doesNotMatch(session, /interface\s+IpPrefix\b/);
 });
 
 test("browser/application source does not import direct LAN execution primitives", () => {
@@ -40,6 +47,13 @@ test("browser/application source does not import direct LAN execution primitives
     const source = readFileSync(file, "utf8");
     for (const pattern of forbidden) assert.doesNotMatch(source, pattern, `${file} crosses execution boundary`);
   }
+});
+
+test("unimplemented modules are not exposed through generic placeholder pages", () => {
+  assert.equal(existsSync(join(root, "app/discovery/page.tsx")), false);
+  assert.equal(existsSync(join(root, "app/telemetry/page.tsx")), false);
+  assert.equal(existsSync(join(root, "src/components/module-page.tsx")), false);
+  assert.equal(existsSync(join(root, "app/ipam/page.tsx")), true, "IPAM only returns after its real contract exists");
 });
 
 test("brand and application SVG assets are versioned", () => {
