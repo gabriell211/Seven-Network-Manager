@@ -1,6 +1,8 @@
 import { cache } from "react";
 import { number, object, safeParse, string } from "valibot";
 
+import type { ReadinessStatus, SystemStatus } from "@/src/generated/api-contract";
+
 import { getServerConfig } from "./config";
 
 const systemStatusSchema = object({
@@ -16,20 +18,6 @@ const readinessStatusSchema = object({
   runtime: string(),
   appliedMigrations: number(),
 });
-
-export interface SystemStatus {
-  name: string;
-  version: string;
-  deploymentMode: string;
-}
-
-export interface ReadinessStatus {
-  status: string;
-  database: string;
-  redis: string;
-  runtime: string;
-  appliedMigrations: number;
-}
 
 export interface PlatformSnapshot {
   system: SystemStatus | null;
