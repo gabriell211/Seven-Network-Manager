@@ -81,8 +81,10 @@ CREATE TABLE discovery_probe_results (
   routing_domain_id uuid NOT NULL REFERENCES routing_domains(id) ON DELETE CASCADE,
   address inet NOT NULL,
   interface_scope text,
+  interface_scope_key text GENERATED ALWAYS AS (coalesce(interface_scope, '')) STORED,
   probe_kind text NOT NULL CHECK (probe_kind IN ('icmp','arp','reverse_dns','tcp')),
   port integer CHECK (port IS NULL OR port BETWEEN 1 AND 65535),
+  port_key integer GENERATED ALWAYS AS (coalesce(port, 0)) STORED,
   status text NOT NULL CHECK (
     status IN ('succeeded','failed','partial','unknown','cancelled','unsupported','not_applicable')
   ),
@@ -91,17 +93,11 @@ CREATE TABLE discovery_probe_results (
   evidence_count integer NOT NULL DEFAULT 0 CHECK (evidence_count >= 0),
   observed_at timestamptz NOT NULL,
   created_at timestamptz NOT NULL DEFAULT now(),
-  CHECK ((probe_kind = 'tcp' AND port IS NOT NULL) OR (probe_kind <> 'tcp' AND port IS NULL))
+  CHECK ((probe_kind = 'tcp' AND port IS NOT NULL) OR (probe_kind <> 'tcp' AND port IS NULL)),
+  CONSTRAINT uq_discovery_probe_result_identity UNIQUE (
+    discovery_run_id, address, interface_scope_key, probe_kind, port_key
+  )
 );
-
-CREATE UNIQUE INDEX uq_discovery_probe_result_identity
-  ON discovery_probe_results (
-    discovery_run_id,
-    address,
-    coalesce(interface_scope, ''),
-    probe_kind,
-    coalesce(port, 0)
-  );
 
 CREATE INDEX idx_discovery_probe_results_run_status
   ON discovery_probe_results (discovery_run_id, status, observed_at);
