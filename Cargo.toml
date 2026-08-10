@@ -4,6 +4,7 @@ members = [
   "apps/site-runtime",
   "crates/audit-store",
   "crates/discovery-core",
+  "crates/discovery-store",
   "crates/domain",
   "crates/executor-core",
   "crates/identity-store",
