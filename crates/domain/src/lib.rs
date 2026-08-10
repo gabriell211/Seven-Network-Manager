@@ -9,6 +9,7 @@ pub mod inventory;
 pub mod ipam;
 pub mod monitoring;
 pub mod provider;
+pub mod runtime_contract;
 pub mod trial;
 
 use std::{fmt, net::IpAddr, str::FromStr, time::Duration};
