@@ -4,6 +4,7 @@ import { ProductShell } from "@/src/components/product-shell";
 import { getPlatformSnapshot } from "@/src/lib/api";
 
 import "./globals.css";
+import "./operational.css";
 
 export const metadata: Metadata = {
   title: {
