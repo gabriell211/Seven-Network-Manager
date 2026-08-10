@@ -1,0 +1,327 @@
+{
+  "openapi": "3.1.0",
+  "info": {
+    "title": "Seven Network Manager API",
+    "version": "1.0.0",
+    "description": "Versioned control-plane REST contract. LAN execution is never exposed to the browser."
+  },
+  "servers": [{ "url": "/api/v1" }],
+  "paths": {
+    "/system": {
+      "get": {
+        "operationId": "getSystem",
+        "responses": { "200": { "description": "System identity", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/SystemStatus" } } } } }
+      }
+    },
+    "/context": {
+      "get": {
+        "operationId": "getOperationalContext",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Organization, sites, routing domains and effective site permissions", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/OperationalContext" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "503": { "$ref": "#/components/responses/Unavailable" }
+        }
+      }
+    },
+    "/auth/login": {
+      "post": {
+        "operationId": "login",
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LoginRequest" } } } },
+        "responses": {
+          "200": { "description": "Authenticated session", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/AccessResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/auth/me": {
+      "get": {
+        "operationId": "getMe",
+        "security": [{ "bearerAuth": [] }],
+        "responses": {
+          "200": { "description": "Authenticated identity", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/MeResponse" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" }
+        }
+      }
+    },
+    "/sites/{siteId}/devices": {
+      "get": {
+        "operationId": "listDevices",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "siteId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "search", "in": "query", "schema": { "type": "string" } },
+          { "name": "lifecycle", "in": "query", "schema": { "$ref": "#/components/schemas/DeviceLifecycle" } },
+          { "name": "deviceType", "in": "query", "schema": { "$ref": "#/components/schemas/DeviceType" } },
+          { "name": "limit", "in": "query", "schema": { "type": "integer", "minimum": 1, "maximum": 200, "default": 50 } },
+          { "name": "offset", "in": "query", "schema": { "type": "integer", "minimum": 0, "default": 0 } }
+        ],
+        "responses": {
+          "200": { "description": "Scoped device list", "content": { "application/json": { "schema": { "type": "array", "items": { "$ref": "#/components/schemas/Device" } } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" }
+        }
+      },
+      "post": {
+        "operationId": "createDevice",
+        "security": [{ "bearerAuth": [] }],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/NewDevice" } } } },
+        "responses": {
+          "201": { "description": "Created device", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Device" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/sites/{siteId}/devices/{deviceId}": {
+      "get": {
+        "operationId": "getDevice",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "siteId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "deviceId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "responses": {
+          "200": { "description": "Device detail", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Device" } } } },
+          "401": { "$ref": "#/components/responses/Unauthorized" },
+          "403": { "$ref": "#/components/responses/Forbidden" },
+          "404": { "$ref": "#/components/responses/NotFound" }
+        }
+      },
+      "patch": {
+        "operationId": "updateDevice",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "siteId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "deviceId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/UpdateDeviceRequest" } } } },
+        "responses": {
+          "200": { "description": "Updated device", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Device" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    },
+    "/sites/{siteId}/devices/{deviceId}/lifecycle": {
+      "post": {
+        "operationId": "transitionDeviceLifecycle",
+        "security": [{ "bearerAuth": [] }],
+        "parameters": [
+          { "name": "siteId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } },
+          { "name": "deviceId", "in": "path", "required": true, "schema": { "type": "string", "format": "uuid" } }
+        ],
+        "requestBody": { "required": true, "content": { "application/json": { "schema": { "$ref": "#/components/schemas/LifecycleRequest" } } } },
+        "responses": {
+          "200": { "description": "Device with transitioned lifecycle", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/Device" } } } },
+          "409": { "$ref": "#/components/responses/Conflict" }
+        }
+      }
+    }
+  },
+  "components": {
+    "securitySchemes": {
+      "bearerAuth": { "type": "http", "scheme": "bearer", "bearerFormat": "JWT" }
+    },
+    "responses": {
+      "Unauthorized": { "description": "Authentication failed", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+      "Forbidden": { "description": "Permission denied", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+      "NotFound": { "description": "Resource not found", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+      "Conflict": { "description": "Optimistic concurrency or domain conflict", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } },
+      "Unavailable": { "description": "Required subsystem unavailable", "content": { "application/json": { "schema": { "$ref": "#/components/schemas/ErrorEnvelope" } } } }
+    },
+    "schemas": {
+      "SystemStatus": {
+        "type": "object",
+        "required": ["name", "version", "deploymentMode"],
+        "properties": {
+          "name": { "type": "string" },
+          "version": { "type": "string" },
+          "deploymentMode": { "type": "string" }
+        }
+      },
+      "ReadinessStatus": {
+        "type": "object",
+        "required": ["status", "database", "redis", "runtime", "appliedMigrations"],
+        "properties": {
+          "status": { "type": "string" },
+          "database": { "type": "string" },
+          "redis": { "type": "string" },
+          "runtime": { "type": "string" },
+          "appliedMigrations": { "type": "integer" }
+        }
+      },
+      "LoginRequest": {
+        "type": "object",
+        "required": ["organizationSlug", "email", "password"],
+        "properties": {
+          "organizationSlug": { "type": "string" },
+          "email": { "type": "string", "format": "email" },
+          "password": { "type": "string", "format": "password" }
+        }
+      },
+      "AccessResponse": {
+        "type": "object",
+        "required": ["accessToken", "tokenType", "expiresInSeconds", "csrfToken"],
+        "properties": {
+          "accessToken": { "type": "string" },
+          "tokenType": { "type": "string" },
+          "expiresInSeconds": { "type": "integer" },
+          "csrfToken": { "type": "string" }
+        }
+      },
+      "MeResponse": {
+        "type": "object",
+        "required": ["userId", "organizationId", "sessionId", "permissions"],
+        "properties": {
+          "userId": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "sessionId": { "type": "string", "format": "uuid" },
+          "permissions": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "Organization": {
+        "type": "object",
+        "required": ["id", "slug", "name"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "slug": { "type": "string" },
+          "name": { "type": "string" }
+        }
+      },
+      "RoutingDomain": {
+        "type": "object",
+        "required": ["id", "name"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "name": { "type": "string" }
+        }
+      },
+      "SiteContext": {
+        "type": "object",
+        "required": ["id", "slug", "name", "timezone", "defaultRoutingDomain", "permissions"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "slug": { "type": "string" },
+          "name": { "type": "string" },
+          "timezone": { "type": "string" },
+          "defaultRoutingDomain": { "anyOf": [{ "$ref": "#/components/schemas/RoutingDomain" }, { "type": "null" }] },
+          "permissions": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "OperationalContext": {
+        "type": "object",
+        "required": ["organization", "sites"],
+        "properties": {
+          "organization": { "$ref": "#/components/schemas/Organization" },
+          "sites": { "type": "array", "items": { "$ref": "#/components/schemas/SiteContext" } }
+        }
+      },
+      "DeviceLifecycle": {
+        "type": "string",
+        "enum": ["discovered", "pending_review", "managed", "unmanaged", "maintenance", "retired", "archived"]
+      },
+      "DeviceType": {
+        "type": "string",
+        "enum": ["switch", "router", "firewall", "server", "printer", "access_point", "unknown"]
+      },
+      "IdentifierKind": {
+        "type": "string",
+        "enum": ["serial", "mac", "hostname", "snmp_engine_id", "provider_native_id", "asset_tag"]
+      },
+      "DeviceIdentifierInput": {
+        "type": "object",
+        "required": ["kind", "value", "source"],
+        "properties": {
+          "kind": { "$ref": "#/components/schemas/IdentifierKind" },
+          "value": { "type": "string" },
+          "source": { "type": "string" },
+          "confidence": { "type": ["number", "null"], "minimum": 0, "maximum": 1 }
+        }
+      },
+      "Device": {
+        "type": "object",
+        "required": ["id", "organizationId", "siteId", "lifecycle", "deviceType", "capabilities", "version", "lastChangedAt"],
+        "properties": {
+          "id": { "type": "string", "format": "uuid" },
+          "organizationId": { "type": "string", "format": "uuid" },
+          "siteId": { "type": "string", "format": "uuid" },
+          "lifecycle": { "$ref": "#/components/schemas/DeviceLifecycle" },
+          "deviceType": { "$ref": "#/components/schemas/DeviceType" },
+          "displayName": { "type": ["string", "null"] },
+          "hostname": { "type": ["string", "null"] },
+          "vendor": { "type": ["string", "null"] },
+          "model": { "type": ["string", "null"] },
+          "serialNumber": { "type": ["string", "null"] },
+          "osName": { "type": ["string", "null"] },
+          "osVersion": { "type": ["string", "null"] },
+          "firmwareVersion": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "operationalOwner": { "type": ["string", "null"] },
+          "capabilities": { "type": "array", "items": { "type": "string" } },
+          "version": { "type": "integer" },
+          "lastSeenAt": { "type": ["string", "null"], "format": "date-time" },
+          "lastChangedAt": { "type": "string", "format": "date-time" },
+          "onboardedAt": { "type": ["string", "null"], "format": "date-time" },
+          "retiredAt": { "type": ["string", "null"], "format": "date-time" },
+          "retirementReason": { "type": ["string", "null"] }
+        }
+      },
+      "NewDevice": {
+        "type": "object",
+        "required": ["deviceType", "capabilities", "identifiers"],
+        "properties": {
+          "deviceType": { "$ref": "#/components/schemas/DeviceType" },
+          "displayName": { "type": ["string", "null"] },
+          "hostname": { "type": ["string", "null"] },
+          "vendor": { "type": ["string", "null"] },
+          "model": { "type": ["string", "null"] },
+          "osName": { "type": ["string", "null"] },
+          "osVersion": { "type": ["string", "null"] },
+          "firmwareVersion": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "operationalOwner": { "type": ["string", "null"] },
+          "capabilities": { "type": "array", "items": { "type": "string" } },
+          "identifiers": { "type": "array", "items": { "$ref": "#/components/schemas/DeviceIdentifierInput" } }
+        }
+      },
+      "UpdateDeviceRequest": {
+        "type": "object",
+        "required": ["expectedVersion"],
+        "properties": {
+          "expectedVersion": { "type": "integer" },
+          "deviceType": { "$ref": "#/components/schemas/DeviceType" },
+          "displayName": { "type": ["string", "null"] },
+          "hostname": { "type": ["string", "null"] },
+          "vendor": { "type": ["string", "null"] },
+          "model": { "type": ["string", "null"] },
+          "osName": { "type": ["string", "null"] },
+          "osVersion": { "type": ["string", "null"] },
+          "firmwareVersion": { "type": ["string", "null"] },
+          "description": { "type": ["string", "null"] },
+          "operationalOwner": { "type": ["string", "null"] },
+          "capabilities": { "type": "array", "items": { "type": "string" } }
+        }
+      },
+      "LifecycleRequest": {
+        "type": "object",
+        "required": ["expectedVersion", "next"],
+        "properties": {
+          "expectedVersion": { "type": "integer" },
+          "next": { "$ref": "#/components/schemas/DeviceLifecycle" },
+          "reason": { "type": ["string", "null"] }
+        }
+      },
+      "ErrorEnvelope": {
+        "type": "object",
+        "required": ["code", "message"],
+        "properties": {
+          "code": { "type": "string" },
+          "message": { "type": "string" },
+          "details": {},
+          "requestId": { "type": ["string", "null"] }
+        }
+      }
+    }
+  }
+}
