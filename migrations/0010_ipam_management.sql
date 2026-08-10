@@ -22,7 +22,13 @@ ALTER TABLE ip_prefixes
   );
 
 ALTER TABLE ip_addresses
-  DROP CONSTRAINT ip_addresses_allocation_state_check,
+  DROP CONSTRAINT ip_addresses_allocation_state_check;
+
+UPDATE ip_addresses
+SET allocation_state = 'excluded'
+WHERE allocation_state = 'deprecated';
+
+ALTER TABLE ip_addresses
   ADD COLUMN prefix_id uuid,
   ADD COLUMN device_id uuid,
   ADD COLUMN description text,
@@ -34,28 +40,7 @@ ALTER TABLE ip_addresses
     REFERENCES ip_prefixes(id, organization_id, site_id, routing_domain_id) ON DELETE RESTRICT,
   ADD CONSTRAINT fk_ip_addresses_device_scope
     FOREIGN KEY (device_id, organization_id, site_id)
-    REFERENCES devices(id, organization_id, site_id) ON DELETE SET NULL;
-
-UPDATE ip_addresses
-SET allocation_state = 'excluded'
-WHERE allocation_state = 'deprecated';
-
-ALTER TABLE ip_addresses
-  ADD CONSTRAINT ip_addresses_must_fit_prefix CHECK (
-    prefix_id IS NULL OR EXISTS (
-      SELECT 1
-      FROM ip_prefixes p
-      WHERE p.id = prefix_id
-        AND p.organization_id = organization_id
-        AND p.site_id = site_id
-        AND p.routing_domain_id = routing_domain_id
-        AND address <<= p.prefix
-    )
-  ) NOT VALID;
-
--- PostgreSQL CHECK constraints cannot safely own cross-row lookup semantics.
--- Enforce prefix containment with a trigger, then drop the NOT VALID documentation constraint.
-ALTER TABLE ip_addresses DROP CONSTRAINT ip_addresses_must_fit_prefix;
+    REFERENCES devices(id, organization_id, site_id) ON DELETE RESTRICT;
 
 CREATE OR REPLACE FUNCTION validate_ip_address_prefix_scope() RETURNS trigger LANGUAGE plpgsql AS $$
 BEGIN
