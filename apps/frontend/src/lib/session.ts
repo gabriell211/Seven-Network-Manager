@@ -2,14 +2,22 @@ import { cache } from "react";
 import { cookies } from "next/headers";
 
 import type {
+  AddressState,
+  DeleteVersionRequest,
   Device,
   DeviceLifecycle,
   DeviceType,
   ErrorEnvelope,
+  IpAddress,
+  IpPrefix,
   LifecycleRequest,
   NewDevice,
+  NewIpAddress,
+  NewIpPrefix,
   OperationalContext,
   UpdateDeviceRequest,
+  UpdateIpAddress,
+  UpdateIpPrefix,
 } from "@/src/generated/api-contract";
 
 import { getServerConfig } from "./config";
@@ -24,6 +32,15 @@ export interface DeviceListFilters {
   search?: string | undefined;
   lifecycle?: DeviceLifecycle | undefined;
   deviceType?: DeviceType | undefined;
+  limit?: number | undefined;
+  offset?: number | undefined;
+}
+
+export interface IpAddressListFilters {
+  routingDomainId?: string | undefined;
+  prefixId?: string | undefined;
+  state?: AddressState | undefined;
+  search?: string | undefined;
   limit?: number | undefined;
   offset?: number | undefined;
 }
@@ -141,6 +158,98 @@ export async function transitionDeviceLifecycle(
   return authenticatedRequest<Device>(
     `/api/v1/sites/${encodeURIComponent(siteId)}/devices/${encodeURIComponent(deviceId)}/lifecycle`,
     { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export async function listIpamPrefixes(
+  siteId: string,
+  routingDomainId?: string,
+): Promise<ApiResult<IpPrefix[]>> {
+  const query = new URLSearchParams();
+  if (routingDomainId) query.set("routingDomainId", routingDomainId);
+  const suffix = query.size > 0 ? `?${query.toString()}` : "";
+  return authenticatedRequest<IpPrefix[]>(
+    `/api/v1/sites/${encodeURIComponent(siteId)}/ipam/prefixes${suffix}`,
+  );
+}
+
+export async function createIpamPrefix(
+  siteId: string,
+  input: NewIpPrefix,
+): Promise<ApiResult<IpPrefix>> {
+  return authenticatedRequest<IpPrefix>(
+    `/api/v1/sites/${encodeURIComponent(siteId)}/ipam/prefixes`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export async function updateIpamPrefix(
+  siteId: string,
+  prefixId: string,
+  input: UpdateIpPrefix,
+): Promise<ApiResult<IpPrefix>> {
+  return authenticatedRequest<IpPrefix>(
+    `/api/v1/sites/${encodeURIComponent(siteId)}/ipam/prefixes/${encodeURIComponent(prefixId)}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+}
+
+export async function deleteIpamPrefix(
+  siteId: string,
+  prefixId: string,
+  input: DeleteVersionRequest,
+): Promise<ApiResult<null>> {
+  return authenticatedRequest<null>(
+    `/api/v1/sites/${encodeURIComponent(siteId)}/ipam/prefixes/${encodeURIComponent(prefixId)}`,
+    { method: "DELETE", body: JSON.stringify(input) },
+  );
+}
+
+export async function listIpamAddresses(
+  siteId: string,
+  filters: IpAddressListFilters,
+): Promise<ApiResult<IpAddress[]>> {
+  const query = new URLSearchParams();
+  if (filters.routingDomainId) query.set("routingDomainId", filters.routingDomainId);
+  if (filters.prefixId) query.set("prefixId", filters.prefixId);
+  if (filters.state) query.set("state", filters.state);
+  if (filters.search) query.set("search", filters.search);
+  query.set("limit", String(filters.limit ?? 100));
+  query.set("offset", String(filters.offset ?? 0));
+  return authenticatedRequest<IpAddress[]>(
+    `/api/v1/sites/${encodeURIComponent(siteId)}/ipam/addresses?${query.toString()}`,
+  );
+}
+
+export async function createIpamAddress(
+  siteId: string,
+  input: NewIpAddress,
+): Promise<ApiResult<IpAddress>> {
+  return authenticatedRequest<IpAddress>(
+    `/api/v1/sites/${encodeURIComponent(siteId)}/ipam/addresses`,
+    { method: "POST", body: JSON.stringify(input) },
+  );
+}
+
+export async function updateIpamAddress(
+  siteId: string,
+  addressId: string,
+  input: UpdateIpAddress,
+): Promise<ApiResult<IpAddress>> {
+  return authenticatedRequest<IpAddress>(
+    `/api/v1/sites/${encodeURIComponent(siteId)}/ipam/addresses/${encodeURIComponent(addressId)}`,
+    { method: "PATCH", body: JSON.stringify(input) },
+  );
+}
+
+export async function deleteIpamAddress(
+  siteId: string,
+  addressId: string,
+  input: DeleteVersionRequest,
+): Promise<ApiResult<null>> {
+  return authenticatedRequest<null>(
+    `/api/v1/sites/${encodeURIComponent(siteId)}/ipam/addresses/${encodeURIComponent(addressId)}`,
+    { method: "DELETE", body: JSON.stringify(input) },
   );
 }
 
