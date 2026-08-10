@@ -6,6 +6,7 @@ import { getOperationalContext } from "@/src/lib/session";
 
 import "./globals.css";
 import "./operational.css";
+import "./session.css";
 
 export const metadata: Metadata = {
   title: {
