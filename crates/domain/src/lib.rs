@@ -104,6 +104,9 @@ impl ScopedIpTarget {
 pub enum Capability {
     RuntimeCapabilitiesRead,
     NetworkTcpConnect,
+    NetworkIcmpEcho,
+    NetworkArpResolve,
+    NetworkReverseDns,
 }
 
 impl Capability {
@@ -111,6 +114,9 @@ impl Capability {
         match self {
             Self::RuntimeCapabilitiesRead => "runtime.capabilities.read",
             Self::NetworkTcpConnect => "network.tcp.connect",
+            Self::NetworkIcmpEcho => "network.icmp.echo",
+            Self::NetworkArpResolve => "network.arp.resolve",
+            Self::NetworkReverseDns => "network.dns.reverse",
         }
     }
 }
@@ -122,6 +128,9 @@ impl FromStr for Capability {
         match value {
             "runtime.capabilities.read" => Ok(Self::RuntimeCapabilitiesRead),
             "network.tcp.connect" => Ok(Self::NetworkTcpConnect),
+            "network.icmp.echo" => Ok(Self::NetworkIcmpEcho),
+            "network.arp.resolve" => Ok(Self::NetworkArpResolve),
+            "network.dns.reverse" => Ok(Self::NetworkReverseDns),
             other => Err(DomainError::UnsupportedCapability(other.to_owned())),
         }
     }
@@ -190,6 +199,24 @@ pub enum DomainError {
     InvalidPort,
     #[error("execution target scope does not match the execution context")]
     ExecutionScopeMismatch,
+    #[error("target is outside the authorized discovery scope")]
+    TargetOutsideAuthorizedScope,
+    #[error("network/broadcast address is not a valid discovery target")]
+    InvalidDiscoveryTarget,
+    #[error("execution timeout is outside supported bounds")]
+    InvalidExecutionTimeout,
+    #[error("probe port is not valid for this probe type")]
+    UnexpectedProbePort,
+    #[error("probe requires an authorized source address")]
+    MissingProbeSourceAddress,
+    #[error("interface scope is invalid or missing")]
+    InvalidInterfaceScope,
+    #[error("address family does not match the authorized scope")]
+    AddressFamilyMismatch,
+    #[error("probe is not applicable to this target/context")]
+    ProbeNotApplicable,
+    #[error("runtime response does not match the execution request")]
+    ExecutionResponseMismatch,
     #[error("unsupported capability: {0}")]
     UnsupportedCapability(String),
 }
