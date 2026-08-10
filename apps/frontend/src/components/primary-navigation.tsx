@@ -17,9 +17,11 @@ interface NavigationItem {
 export function PrimaryNavigation({ context }: { context: OperationalContext | null }) {
   const pathname = usePathname();
   const canViewInventory = context?.sites.some((site) => site.permissions.includes("devices.view")) ?? false;
+  const canViewIpam = context?.sites.some((site) => site.permissions.includes("ipam.view")) ?? false;
   const navigation: NavigationItem[] = [
     { href: "/", label: "Dashboard", icon: "dashboard", available: true },
     { href: "/inventory", label: "Inventário", icon: "inventory", available: canViewInventory },
+    { href: "/ipam", label: "IPAM", icon: "ipam", available: canViewIpam },
     { href: "/api-docs", label: "Contrato API", icon: "settings", available: true },
   ];
 
