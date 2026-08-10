@@ -1,21 +1,25 @@
 "use client";
 
 import type { ReactNode } from "react";
+import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import type { OperationalContext } from "@/src/generated/api-contract";
 import type { PlatformSnapshot } from "@/src/lib/api";
 
 import { Brand } from "./brand";
 import { Icon } from "./icon";
+import { LogoutButton } from "./logout-button";
 import { NetworkState } from "./network-state";
 import { PrimaryNavigation } from "./primary-navigation";
 
 interface ProductShellProps {
   children: ReactNode;
+  context: OperationalContext | null;
   snapshot: PlatformSnapshot;
 }
 
-export function ProductShell({ children, snapshot }: ProductShellProps) {
+export function ProductShell({ children, context, snapshot }: ProductShellProps) {
   const pathname = usePathname();
   const readiness = snapshot.readiness?.status ?? "offline";
   const version = snapshot.system?.version ?? "indisponível";
@@ -33,7 +37,7 @@ export function ProductShell({ children, snapshot }: ProductShellProps) {
         <div className="sidebar__brand">
           <Brand />
         </div>
-        <PrimaryNavigation />
+        <PrimaryNavigation context={context} />
         <div className="sidebar__security">
           <span className="sidebar__security-icon"><Icon name="shield" size={18} /></span>
           <div>
@@ -47,8 +51,9 @@ export function ProductShell({ children, snapshot }: ProductShellProps) {
         <header className="topbar">
           <div className="topbar__mobile-brand"><Brand compact /></div>
           <div className="topbar__context">
-            <span className="eyebrow">Control plane</span>
-            <strong>{deploymentMode}</strong>
+            <span className="eyebrow">{context ? "Organização autenticada" : "Control plane"}</span>
+            <strong>{context ? context.organization.name : deploymentMode}</strong>
+            {context ? <span>{context.sites.length} site(s) acessível(is)</span> : null}
           </div>
           <div className="topbar__actions">
             <NetworkState />
@@ -56,6 +61,7 @@ export function ProductShell({ children, snapshot }: ProductShellProps) {
               <span className="platform-chip__dot" />
               {formatReadiness(readiness)}
             </span>
+            {context ? <LogoutButton /> : <Link className="icon-action" href="/login">Entrar</Link>}
           </div>
         </header>
 
