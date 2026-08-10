@@ -79,11 +79,7 @@ pub(crate) async fn list_prefixes(
     };
     match state
         .ipam
-        .list_prefixes(
-            principal.organization_id,
-            site_id,
-            query.routing_domain_id,
-        )
+        .list_prefixes(principal.organization_id, site_id, query.routing_domain_id)
         .await
     {
         Ok(prefixes) => Json(prefixes).into_response(),

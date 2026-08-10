@@ -2240,6 +2240,7 @@ dependencies = [
  "snm-audit-store",
  "snm-domain",
  "snm-inventory-store",
+ "snm-ipam-store",
  "snm-observability",
  "snm-security",
  "sqlx",
@@ -2299,6 +2300,23 @@ dependencies = [
  "sqlx",
  "thiserror",
  "tokio",
+ "uuid",
+]
+
+[[package]]
+name = "snm-ipam-store"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "ipnet",
+ "serde",
+ "serde_json",
+ "snm-audit-store",
+ "snm-domain",
+ "snm-platform-events",
+ "snm-security",
+ "sqlx",
+ "thiserror",
  "uuid",
 ]
 

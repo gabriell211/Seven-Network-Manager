@@ -104,15 +104,10 @@ impl IpamStore {
         .execute(&mut *tx)
         .await?;
 
-        let created = load_prefix_in_tx(
-            &mut tx,
-            context.organization_id,
-            context.site_id,
-            id,
-            false,
-        )
-        .await?
-        .ok_or(IpamError::PrefixNotFound)?;
+        let created =
+            load_prefix_in_tx(&mut tx, context.organization_id, context.site_id, id, false)
+                .await?
+                .ok_or(IpamError::PrefixNotFound)?;
         let after = serde_json::to_value(&created)?;
         write_mutation_records(
             &mut tx,
@@ -336,15 +331,10 @@ impl IpamStore {
         .bind(clean_optional(input.description))
         .execute(&mut *tx)
         .await?;
-        let created = load_address_in_tx(
-            &mut tx,
-            context.organization_id,
-            context.site_id,
-            id,
-            false,
-        )
-        .await?
-        .ok_or(IpamError::AddressNotFound)?;
+        let created =
+            load_address_in_tx(&mut tx, context.organization_id, context.site_id, id, false)
+                .await?
+                .ok_or(IpamError::AddressNotFound)?;
         let after = serde_json::to_value(&created)?;
         write_mutation_records(
             &mut tx,
@@ -640,7 +630,9 @@ impl AddressQuery {
             ));
         }
         if self.search.as_ref().is_some_and(|value| value.len() > 255) {
-            return Err(IpamError::InvalidInput("address search is too long".to_owned()));
+            return Err(IpamError::InvalidInput(
+                "address search is too long".to_owned(),
+            ));
         }
         Ok(())
     }
@@ -700,9 +692,9 @@ fn validate_prefix_fields(
         .map(str::trim)
         .filter(|value| !value.is_empty())
         .map(|value| {
-            value
-                .parse::<IpAddr>()
-                .map_err(|_| IpamError::InvalidInput("gateway must be a valid IP address".to_owned()))
+            value.parse::<IpAddr>().map_err(|_| {
+                IpamError::InvalidInput("gateway must be a valid IP address".to_owned())
+            })
         })
         .transpose()?;
     if let Some(value) = gateway {
@@ -737,7 +729,8 @@ fn validate_address_input(input: &NewIpAddress) -> Result<IpAddr, IpamError> {
     validate_source(&input.source)?;
     if input.state == AddressState::Available {
         return Err(IpamError::InvalidInput(
-            "available addresses are derived from the prefix and are not persisted as allocations".to_owned(),
+            "available addresses are derived from the prefix and are not persisted as allocations"
+                .to_owned(),
         ));
     }
     let address = input
@@ -764,7 +757,8 @@ fn validate_address_update(input: &UpdateIpAddress) -> Result<(), IpamError> {
     validate_source(&input.source)?;
     if input.state == AddressState::Available {
         return Err(IpamError::InvalidInput(
-            "available addresses are derived from the prefix and are not persisted as allocations".to_owned(),
+            "available addresses are derived from the prefix and are not persisted as allocations"
+                .to_owned(),
         ));
     }
     Ok(())
@@ -773,7 +767,9 @@ fn validate_address_update(input: &UpdateIpAddress) -> Result<(), IpamError> {
 fn validate_source(source: &str) -> Result<(), IpamError> {
     let source = source.trim();
     if source.is_empty() || source.len() > 120 {
-        return Err(IpamError::InvalidInput("allocation source is invalid".to_owned()));
+        return Err(IpamError::InvalidInput(
+            "allocation source is invalid".to_owned(),
+        ));
     }
     Ok(())
 }
@@ -786,7 +782,9 @@ fn validate_optional_text(name: &str, value: Option<&str>, max: usize) -> Result
 }
 
 fn clean_optional(value: Option<String>) -> Option<String> {
-    value.map(|value| value.trim().to_owned()).filter(|value| !value.is_empty())
+    value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 async fn load_prefix_in_tx(
@@ -1027,7 +1025,9 @@ impl From<sqlx::Error> for IpamError {
                 Some("23505") => return Self::AddressConflict,
                 Some("23503") => return Self::ReferenceConflict,
                 Some("23514") => {
-                    return Self::InvalidInput("database constraint rejected IPAM mutation".to_owned());
+                    return Self::InvalidInput(
+                        "database constraint rejected IPAM mutation".to_owned(),
+                    );
                 }
                 _ => {}
             }
