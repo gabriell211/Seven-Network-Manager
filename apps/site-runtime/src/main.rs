@@ -10,7 +10,7 @@ use axum::{
     routing::{get, post},
 };
 use serde::Serialize;
-use snm_domain::TcpConnectRequest;
+use snm_domain::{TcpConnectRequest, discovery::DiscoveryProbeRequest};
 use snm_executor_core::{DefaultNetworkExecutor, NetworkExecutor, NetworkPolicy};
 use snm_observability::{CorrelationContext, TelemetryConfig};
 use subtle::ConstantTimeEq;
@@ -85,6 +85,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route("/ready", get(ready))
         .route("/v1/capabilities", get(capabilities))
         .route("/v1/execute/tcp-connect", post(tcp_connect))
+        .route("/v1/execute/discovery-probe", post(discovery_probe))
         .with_state(state)
         .layer(TimeoutLayer::with_status_code(
             StatusCode::REQUEST_TIMEOUT,
@@ -109,10 +110,20 @@ async fn correlation_middleware(mut request: Request<Body>, next: Next) -> Respo
     let correlation_id = header_text(request.headers(), "x-correlation-id");
     let context = CorrelationContext::new(request_id, correlation_id);
 
-    let request_header = HeaderValue::from_str(&context.request_id().to_string())
-        .expect("UUID request ID is always a valid header value");
-    let correlation_header = HeaderValue::from_str(&context.correlation_id().to_string())
-        .expect("UUID correlation ID is always a valid header value");
+    let request_header = match HeaderValue::from_str(&context.request_id().to_string()) {
+        Ok(value) => value,
+        Err(error) => {
+            error!(%error, "failed to encode generated request id as response header");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
+    let correlation_header = match HeaderValue::from_str(&context.correlation_id().to_string()) {
+        Ok(value) => value,
+        Err(error) => {
+            error!(%error, "failed to encode generated correlation id as response header");
+            return StatusCode::INTERNAL_SERVER_ERROR.into_response();
+        }
+    };
     request.headers_mut().insert(
         HeaderName::from_static("x-request-id"),
         request_header.clone(),
@@ -192,26 +203,62 @@ async fn tcp_connect(
         .await
     {
         Ok(result) => (StatusCode::OK, Json(result)).into_response(),
-        Err(error) => {
-            let (status, code) = match error {
-                snm_executor_core::ExecutorError::InvalidRequest(_) => (
-                    StatusCode::UNPROCESSABLE_ENTITY,
-                    "invalid_execution_request",
-                ),
-                snm_executor_core::ExecutorError::TargetDenied => {
-                    (StatusCode::FORBIDDEN, "target_denied")
-                }
-            };
-            (
-                status,
-                Json(ErrorResponse {
-                    code,
-                    message: error.to_string(),
-                }),
-            )
-                .into_response()
-        }
+        Err(error) => executor_error_response(error),
     }
+}
+
+async fn discovery_probe(
+    State(state): State<AppState>,
+    headers: HeaderMap,
+    Json(request): Json<DiscoveryProbeRequest>,
+) -> Response {
+    if let Err(status) = authorize(&headers, &state.token) {
+        return status.into_response();
+    }
+
+    let probe = request.probe.as_str();
+    let transport_span = tracing::info_span!(
+        "snm.runtime.discovery_probe",
+        capability = "discovery.probe.execute",
+        probe = probe,
+        site_id = %request.context.site_id,
+        routing_domain_id = %request.context.routing_domain_id,
+        action_id = %request.context.action_id,
+        correlation_id = %request.context.correlation_id
+    );
+    match state
+        .executor
+        .discovery_probe(request)
+        .instrument(transport_span)
+        .await
+    {
+        Ok(result) => (StatusCode::OK, Json(result)).into_response(),
+        Err(error) => executor_error_response(error),
+    }
+}
+
+fn executor_error_response(error: snm_executor_core::ExecutorError) -> Response {
+    let (status, code) = match error {
+        snm_executor_core::ExecutorError::InvalidRequest(_) => (
+            StatusCode::UNPROCESSABLE_ENTITY,
+            "invalid_execution_request",
+        ),
+        snm_executor_core::ExecutorError::TargetDenied => {
+            (StatusCode::FORBIDDEN, "target_denied")
+        }
+        snm_executor_core::ExecutorError::LocalExecution(_) => (
+            StatusCode::INTERNAL_SERVER_ERROR,
+            "local_execution_error",
+        ),
+    };
+    (
+        status,
+        Json(ErrorResponse {
+            code,
+            message: error.to_string(),
+        }),
+    )
+        .into_response()
 }
 
 fn authorize(headers: &HeaderMap, expected: &str) -> Result<(), StatusCode> {
