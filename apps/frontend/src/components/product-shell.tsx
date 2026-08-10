@@ -1,4 +1,7 @@
+"use client";
+
 import type { ReactNode } from "react";
+import { usePathname } from "next/navigation";
 
 import type { PlatformSnapshot } from "@/src/lib/api";
 
@@ -13,9 +16,14 @@ interface ProductShellProps {
 }
 
 export function ProductShell({ children, snapshot }: ProductShellProps) {
+  const pathname = usePathname();
   const readiness = snapshot.readiness?.status ?? "offline";
   const version = snapshot.system?.version ?? "indisponível";
   const deploymentMode = snapshot.system?.deploymentMode ?? "control plane offline";
+
+  if (pathname.startsWith("/login")) {
+    return <main className="auth-surface">{children}</main>;
+  }
 
   return (
     <div className="app-shell">
