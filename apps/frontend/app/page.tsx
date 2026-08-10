@@ -22,6 +22,9 @@ export default async function Home() {
   const canViewInventory = context.ok
     ? context.data.sites.some((site) => site.permissions.includes("devices.view"))
     : false;
+  const canViewIpam = context.ok
+    ? context.data.sites.some((site) => site.permissions.includes("ipam.view"))
+    : false;
 
   return (
     <div className="page-stack">
@@ -100,6 +103,16 @@ export default async function Home() {
               <span aria-hidden="true" className="module-card__arrow">→</span>
             </Link>
           ) : null}
+          {canViewIpam ? (
+            <Link className="module-card" href="/ipam">
+              <span className="module-card__icon"><Icon name="ipam" size={22} /></span>
+              <div>
+                <strong>IPAM</strong>
+                <p>Prefixos IPv4/IPv6, routing domains, capacidade e alocações com conflito escopado.</p>
+              </div>
+              <span aria-hidden="true" className="module-card__arrow">→</span>
+            </Link>
+          ) : null}
           <Link className="module-card" href="/api-docs">
             <span className="module-card__icon"><Icon name="settings" size={22} /></span>
             <div>
@@ -110,13 +123,13 @@ export default async function Home() {
           </Link>
         </div>
 
-        {!canViewInventory ? (
+        {!canViewInventory && !canViewIpam ? (
           <div className="operational-state">
             <span className="operational-state__icon"><OperationalIcon name="lock" size={22} /></span>
             <div>
               <span className="eyebrow">Least privilege</span>
               <h2>Nenhuma capability operacional autorizada</h2>
-              <p>A sessão não possui <code>devices.view</code> em nenhum site. O painel não exibe módulos aos quais o backend não concede acesso.</p>
+              <p>A sessão não possui permissões operacionais em nenhum site. O painel não exibe módulos aos quais o backend não concede acesso.</p>
             </div>
           </div>
         ) : null}
