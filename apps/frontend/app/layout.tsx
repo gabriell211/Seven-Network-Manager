@@ -8,6 +8,7 @@ import "./globals.css";
 import "./operational.css";
 import "./session.css";
 import "./api-docs.css";
+import "./ipam.css";
 
 export const metadata: Metadata = {
   title: {
