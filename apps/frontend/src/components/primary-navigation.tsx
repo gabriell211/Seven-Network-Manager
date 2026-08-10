@@ -24,6 +24,7 @@ export function PrimaryNavigation() {
         return (
           <Link
             aria-current={active ? "page" : undefined}
+            aria-label={item.label}
             className="primary-nav__item"
             data-active={active || undefined}
             href={item.href}
