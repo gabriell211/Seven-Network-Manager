@@ -1,3 +1,5 @@
+pub mod incremental;
+
 use std::{
     collections::BTreeSet,
     net::{IpAddr, Ipv4Addr},
@@ -101,7 +103,6 @@ impl DiscoveryRunPlan {
         {
             return Err(DiscoveryError::ScopeMismatch);
         }
-
         let targets = plan_targets(
             scope.network,
             scope.ipv6_strategy,
@@ -120,7 +121,6 @@ impl DiscoveryRunPlan {
                 ObservationKind::ManagementProtocol,
             ));
         }
-
         Ok(Self {
             context,
             scope: execution_scope,
@@ -148,7 +148,7 @@ impl DiscoveryRunPlan {
         per_target.saturating_mul(self.targets.len())
     }
 
-    fn requests(&self) -> Vec<DiscoveryProbeRequest> {
+    pub(crate) fn requests(&self) -> Vec<DiscoveryProbeRequest> {
         let mut requests = Vec::with_capacity(self.planned_probe_count());
         for address in &self.targets {
             let target = ScopedIpTarget {
@@ -240,7 +240,6 @@ impl DiscoveryOrchestrator {
         let semaphore = Arc::new(Semaphore::new(plan.concurrency_limit.max(1)));
         let launch_delay = Duration::from_secs_f64(1.0 / f64::from(plan.rate_per_second.max(1)));
         let mut tasks = JoinSet::new();
-
         for request in plan.requests() {
             if cancellation.is_cancelled() {
                 break;
@@ -270,13 +269,11 @@ impl DiscoveryOrchestrator {
                     result = executor.execute(request) => result,
                 }
             });
-
             tokio::select! {
                 _ = cancellation.cancelled() => break,
                 _ = sleep(launch_delay) => {}
             }
         }
-
         let mut results = Vec::with_capacity(total);
         let mut orchestration_errors = 0_u64;
         while let Some(joined) = tasks.join_next().await {
@@ -285,23 +282,15 @@ impl DiscoveryOrchestrator {
                 Ok(Err(_)) | Err(_) => orchestration_errors = orchestration_errors.saturating_add(1),
             }
         }
-
-        results.sort_by_key(|result| {
-            (
-                result.target.address,
-                probe_order(result.probe),
-                result.port.unwrap_or(0),
-            )
-        });
+        sort_results(&mut results);
         let summary = RunSummary::from_results(
             total,
             &results,
             orchestration_errors,
             started.elapsed(),
         );
-        let status = final_status(&summary, cancellation.is_cancelled());
         DiscoveryRunOutcome {
-            status,
+            status: final_status(&summary, cancellation.is_cancelled()),
             results,
             summary,
         }
@@ -326,7 +315,7 @@ pub struct RunSummary {
 }
 
 impl RunSummary {
-    fn from_results(
+    pub(crate) fn from_results(
         planned: usize,
         results: &[DiscoveryProbeResult],
         orchestration_errors: u64,
@@ -400,7 +389,6 @@ pub fn plan_targets(
         }
         return Ok(unique.into_iter().collect());
     }
-
     match network {
         IpNet::V4(network) => enumerate_ipv4(network, max_targets),
         IpNet::V6(_) => match ipv6_strategy {
@@ -433,7 +421,6 @@ fn enumerate_ipv4(
             max: max_targets,
         });
     }
-
     let first = u32::from(network.network());
     let last = u32::from(network.broadcast());
     let (start, end) = if network.prefix_len() >= 31 {
@@ -450,14 +437,13 @@ fn normalize_ports(ports: &[u16]) -> Result<Vec<u16>, DiscoveryError> {
     if ports.len() > MAX_TCP_PORTS {
         return Err(DiscoveryError::TooManyTcpPorts);
     }
-    let unique: BTreeSet<u16> = ports.iter().copied().filter(|port| *port > 0).collect();
-    if unique.len() != ports.iter().filter(|port| **port > 0).count() {
-        // Duplicates are harmless; normalize them instead of multiplying probes.
+    if ports.contains(&0) {
+        return Err(DiscoveryError::InvalidTcpPort);
     }
-    Ok(unique.into_iter().collect())
+    Ok(ports.iter().copied().collect::<BTreeSet<_>>().into_iter().collect())
 }
 
-fn final_status(summary: &RunSummary, cancelled: bool) -> DiscoveryStatus {
+pub(crate) fn final_status(summary: &RunSummary, cancelled: bool) -> DiscoveryStatus {
     if cancelled || summary.cancelled > 0 || summary.completed < summary.planned {
         return DiscoveryStatus::Cancelled;
     }
@@ -478,13 +464,23 @@ fn final_status(summary: &RunSummary, cancelled: bool) -> DiscoveryStatus {
     }
 }
 
-fn probe_order(probe: DiscoveryProbeKind) -> u8 {
+pub(crate) fn probe_order(probe: DiscoveryProbeKind) -> u8 {
     match probe {
         DiscoveryProbeKind::Icmp => 0,
         DiscoveryProbeKind::Arp => 1,
         DiscoveryProbeKind::ReverseDns => 2,
         DiscoveryProbeKind::Tcp => 3,
     }
+}
+
+pub(crate) fn sort_results(results: &mut [DiscoveryProbeResult]) {
+    results.sort_by_key(|result| {
+        (
+            result.target.address,
+            probe_order(result.probe),
+            result.port.unwrap_or(0),
+        )
+    });
 }
 
 #[derive(Debug, Error)]
@@ -511,6 +507,8 @@ pub enum DiscoveryError {
     TcpPortsRequired,
     #[error("at most 64 TCP ports may be configured per scope")]
     TooManyTcpPorts,
+    #[error("TCP port zero is invalid")]
+    InvalidTcpPort,
     #[error("observation kind {0:?} is not implemented by the MVP probe pipeline")]
     UnsupportedObservation(ObservationKind),
     #[error("probe execution failed: {0}")]
@@ -523,7 +521,7 @@ mod tests {
 
     use snm_domain::{
         ActionId, ActorId, CorrelationId, OrganizationId, RoutingDomainId, SiteId,
-        discovery::{ProbeEvidence, DiscoveryProbeKind},
+        discovery::ProbeEvidence,
     };
 
     use super::*;
@@ -572,7 +570,10 @@ mod tests {
         }
     }
 
-    fn scope(network: &str, observations: Vec<ObservationKind>) -> (DiscoveryScope, ExecutionContext, DiscoveryExecutionScope) {
+    fn scope(
+        network: &str,
+        observations: Vec<ObservationKind>,
+    ) -> (DiscoveryScope, ExecutionContext, DiscoveryExecutionScope) {
         let organization_id = OrganizationId::new();
         let site_id = SiteId::new();
         let routing_domain_id = RoutingDomainId::new();
@@ -617,7 +618,10 @@ mod tests {
     #[test]
     fn ipv4_planning_skips_network_and_broadcast() {
         let targets = plan_targets("10.0.0.0/30".parse().unwrap(), None, &[], 10).unwrap();
-        assert_eq!(targets, vec!["10.0.0.1".parse().unwrap(), "10.0.0.2".parse().unwrap()]);
+        assert_eq!(
+            targets,
+            vec!["10.0.0.1".parse().unwrap(), "10.0.0.2".parse().unwrap()]
+        );
     }
 
     #[test]
@@ -675,14 +679,13 @@ mod tests {
             Some(10),
         )
         .unwrap();
-        let executor = FakeExecutor {
+        let outcome = DiscoveryOrchestrator::new(Arc::new(FakeExecutor {
             calls: Arc::new(AtomicUsize::new(0)),
             fail_tcp: true,
             delay: Duration::ZERO,
-        };
-        let outcome = DiscoveryOrchestrator::new(Arc::new(executor))
-            .execute(plan, CancellationToken::new())
-            .await;
+        }))
+        .execute(plan, CancellationToken::new())
+        .await;
         assert_eq!(outcome.status, DiscoveryStatus::Partial);
         assert_eq!(outcome.summary.succeeded, 2);
         assert_eq!(outcome.summary.failed, 2);
@@ -705,20 +708,19 @@ mod tests {
         )
         .unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
-        let executor = FakeExecutor {
-            calls: calls.clone(),
-            fail_tcp: false,
-            delay: Duration::from_millis(200),
-        };
         let cancellation = CancellationToken::new();
         let cancel_clone = cancellation.clone();
         tokio::spawn(async move {
             sleep(Duration::from_millis(20)).await;
             cancel_clone.cancel();
         });
-        let outcome = DiscoveryOrchestrator::new(Arc::new(executor))
-            .execute(plan, cancellation)
-            .await;
+        let outcome = DiscoveryOrchestrator::new(Arc::new(FakeExecutor {
+            calls: calls.clone(),
+            fail_tcp: false,
+            delay: Duration::from_millis(200),
+        }))
+        .execute(plan, cancellation)
+        .await;
         assert_eq!(outcome.status, DiscoveryStatus::Cancelled);
         assert!(calls.load(Ordering::SeqCst) < 12);
     }
