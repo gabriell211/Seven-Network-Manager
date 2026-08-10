@@ -2,6 +2,7 @@ import type { Metadata, Viewport } from "next";
 
 import { ProductShell } from "@/src/components/product-shell";
 import { getPlatformSnapshot } from "@/src/lib/api";
+import { getOperationalContext } from "@/src/lib/session";
 
 import "./globals.css";
 import "./operational.css";
@@ -30,12 +31,16 @@ export const viewport: Viewport = {
 };
 
 export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
-  const snapshot = await getPlatformSnapshot();
+  const [snapshot, contextResult] = await Promise.all([
+    getPlatformSnapshot(),
+    getOperationalContext(),
+  ]);
+  const context = contextResult.ok ? contextResult.data : null;
 
   return (
     <html lang="pt-BR">
       <body>
-        <ProductShell snapshot={snapshot}>{children}</ProductShell>
+        <ProductShell context={context} snapshot={snapshot}>{children}</ProductShell>
       </body>
     </html>
   );
