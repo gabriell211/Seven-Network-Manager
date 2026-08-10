@@ -6,6 +6,7 @@ use thiserror::Error;
 pub(crate) struct BackendConfig {
     pub(crate) bind: SocketAddr,
     pub(crate) runtime_url: String,
+    pub(crate) runtime_token: String,
     pub(crate) database_url: String,
     pub(crate) redis_url: String,
     pub(crate) database_max_connections: u32,
@@ -29,6 +30,10 @@ impl BackendConfig {
             "SNM_RUNTIME_URL",
             read_or_default(&mut read, "SNM_RUNTIME_URL", "http://127.0.0.1:9765"),
         )?;
+        let runtime_token = required(&mut read, "SNM_RUNTIME_TOKEN")?;
+        if runtime_token.len() < 32 || runtime_token == "change-me-with-a-long-random-secret" {
+            return Err(ConfigError::InvalidSecret("SNM_RUNTIME_TOKEN"));
+        }
         let database_url = required(&mut read, "DATABASE_URL")?;
         require_scheme(
             "DATABASE_URL",
@@ -53,6 +58,7 @@ impl BackendConfig {
         Ok(Self {
             bind,
             runtime_url,
+            runtime_token,
             database_url,
             redis_url,
             database_max_connections,
@@ -199,6 +205,8 @@ pub(crate) enum ConfigError {
     InvalidSocketAddress(&'static str),
     #[error("invalid URL scheme in {0}")]
     InvalidUrlScheme(&'static str),
+    #[error("invalid secret in {0}")]
+    InvalidSecret(&'static str),
     #[error("invalid boolean in {0}")]
     InvalidBoolean(&'static str),
     #[error("invalid integer in {0}")]
@@ -227,6 +235,10 @@ mod tests {
                 "REDIS_URL".to_owned(),
                 "redis://127.0.0.1:6379/0".to_owned(),
             ),
+            (
+                "SNM_RUNTIME_TOKEN".to_owned(),
+                "0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
+            ),
         ])
     }
 
@@ -252,6 +264,16 @@ mod tests {
         assert_eq!(
             parse(values).unwrap_err(),
             ConfigError::InvalidBoolean("SNM_RUN_MIGRATIONS")
+        );
+    }
+
+    #[test]
+    fn weak_runtime_secret_is_rejected() {
+        let mut values = base();
+        values.insert("SNM_RUNTIME_TOKEN".into(), "weak".into());
+        assert_eq!(
+            parse(values).unwrap_err(),
+            ConfigError::InvalidSecret("SNM_RUNTIME_TOKEN")
         );
     }
 
