@@ -4,6 +4,7 @@ mod config;
 mod context_api;
 mod db;
 mod inventory_api;
+mod ipam_api;
 mod redis_state;
 
 use std::{env, sync::Arc, time::Duration};
@@ -25,6 +26,7 @@ use db::Database;
 use redis_state::RedisState;
 use serde::Serialize;
 use snm_inventory_store::InventoryStore;
+use snm_ipam_store::IpamStore;
 use snm_observability::{CorrelationContext, TelemetryConfig};
 use tower_http::{catch_panic::CatchPanicLayer, timeout::TimeoutLayer, trace::TraceLayer};
 use tracing::{Instrument, error, info, warn};
@@ -37,6 +39,7 @@ struct AppState {
     auth: Arc<AuthService>,
     authorization: Arc<AuthorizationService>,
     inventory: InventoryStore,
+    ipam: IpamStore,
     inventory_require_approval: bool,
 }
 
@@ -137,6 +140,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     maybe_bootstrap_admin(&auth).await?;
     let authorization = Arc::new(AuthorizationService::from_env(database.clone())?);
     let inventory = InventoryStore::new(database.pool().clone());
+    let ipam = IpamStore::new(database.pool().clone());
 
     let state = AppState {
         runtime: Arc::new(HttpRuntimeClient::new(config.runtime_url.clone())?),
@@ -145,6 +149,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         auth,
         authorization,
         inventory,
+        ipam,
         inventory_require_approval: config.inventory_require_approval,
     };
 
@@ -168,6 +173,22 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .route(
             "/api/v1/sites/{site_id}/devices/{device_id}/lifecycle",
             post(inventory_api::transition_lifecycle),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/ipam/prefixes",
+            get(ipam_api::list_prefixes).post(ipam_api::create_prefix),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/ipam/prefixes/{prefix_id}",
+            axum::routing::patch(ipam_api::update_prefix).delete(ipam_api::delete_prefix),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/ipam/addresses",
+            get(ipam_api::list_addresses).post(ipam_api::create_address),
+        )
+        .route(
+            "/api/v1/sites/{site_id}/ipam/addresses/{address_id}",
+            axum::routing::patch(ipam_api::update_address).delete(ipam_api::delete_address),
         )
         .with_state(state)
         .layer(DefaultBodyLimit::max(config.body_limit_bytes))
