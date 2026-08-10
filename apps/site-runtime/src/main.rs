@@ -10,7 +10,11 @@ use axum::{
     routing::{get, post},
 };
 use serde::Serialize;
-use snm_domain::{TcpConnectRequest, discovery::DiscoveryProbeRequest};
+use snm_domain::{
+    TcpConnectRequest,
+    discovery::DiscoveryProbeRequest,
+    runtime_contract::DiscoveryProbeResponse,
+};
 use snm_executor_core::{DefaultNetworkExecutor, NetworkExecutor, NetworkPolicy};
 use snm_observability::{CorrelationContext, TelemetryConfig};
 use subtle::ConstantTimeEq;
@@ -217,14 +221,15 @@ async fn discovery_probe(
     }
 
     let probe = request.probe.as_str();
+    let context = request.context.clone();
     let transport_span = tracing::info_span!(
         "snm.runtime.discovery_probe",
         capability = "discovery.probe.execute",
         probe = probe,
-        site_id = %request.context.site_id,
-        routing_domain_id = %request.context.routing_domain_id,
-        action_id = %request.context.action_id,
-        correlation_id = %request.context.correlation_id
+        site_id = %context.site_id,
+        routing_domain_id = %context.routing_domain_id,
+        action_id = %context.action_id,
+        correlation_id = %context.correlation_id
     );
     match state
         .executor
@@ -232,7 +237,11 @@ async fn discovery_probe(
         .instrument(transport_span)
         .await
     {
-        Ok(result) => (StatusCode::OK, Json(result)).into_response(),
+        Ok(result) => (
+            StatusCode::OK,
+            Json(DiscoveryProbeResponse { context, result }),
+        )
+            .into_response(),
         Err(error) => executor_error_response(error),
     }
 }
