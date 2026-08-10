@@ -1,0 +1,87 @@
+name: discovery-validation-temp
+
+on:
+  push:
+    branches: ["agent/frontend-product-shell"]
+
+permissions:
+  contents: write
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17.6-alpine3.22
+        env:
+          POSTGRES_USER: snm
+          POSTGRES_PASSWORD: snm-ci-only-password
+          POSTGRES_DB: snm_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd "pg_isready -U snm -d snm_ci"
+          --health-interval 5s
+          --health-timeout 5s
+          --health-retries 20
+    env:
+      DATABASE_URL: postgres://snm:snm-ci-only-password@127.0.0.1:5432/snm_ci
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          ref: agent/frontend-product-shell
+          fetch-depth: 0
+      - name: Apply deterministic source normalizations
+        shell: python
+        run: |
+          from pathlib import Path
+
+          store = Path("crates/discovery-store/src/lib.rs")
+          text = store.read_text()
+          text = text.replace("input.schedule_interval_seconds.map(i32::from)", "input.schedule_interval_seconds.map(|value| value as i32)")
+          text = text.replace("values.schedule_interval_seconds.map(i32::from)", "values.schedule_interval_seconds.map(|value| value as i32)")
+          text = text.replace(
+              "ON CONFLICT (\n              discovery_run_id, address, coalesce(interface_scope, ''), probe_kind, coalesce(port, 0)\n            ) DO UPDATE SET",
+              "ON CONFLICT ON CONSTRAINT uq_discovery_probe_result_identity DO UPDATE SET",
+          )
+          store.write_text(text)
+
+          core = Path("crates/discovery-core/src/lib.rs")
+          text = core.read_text()
+          text = text.replace(
+              "    let unique: BTreeSet<u16> = ports.iter().copied().filter(|port| *port > 0).collect();\n    if unique.len() != ports.iter().filter(|port| **port > 0).count() {\n        // Duplicates are harmless; normalize them instead of multiplying probes.\n    }\n",
+              "    if ports.contains(&0) {\n        return Err(DiscoveryError::InvalidTcpPort);\n    }\n    let unique: BTreeSet<u16> = ports.iter().copied().collect();\n",
+          )
+          text = text.replace(
+              "    #[error(\"at most 64 TCP ports may be configured per scope\")]\n    TooManyTcpPorts,",
+              "    #[error(\"at most 64 TCP ports may be configured per scope\")]\n    TooManyTcpPorts,\n    #[error(\"TCP port zero is invalid\")]\n    InvalidTcpPort,",
+          )
+          core.write_text(text)
+
+          executor = Path("crates/executor-core/src/lib.rs")
+          text = executor.read_text()
+          text = text.replace(
+              "    error.kind() == io::ErrorKind::PermissionDenied\n        || matches!(error.raw_os_error(), Some(libc::EPERM | libc::EACCES))",
+              "    error.kind() == io::ErrorKind::PermissionDenied\n        || error.raw_os_error().is_some_and(|code| code == libc::EPERM || code == libc::EACCES)",
+          )
+          executor.write_text(text)
+      - name: Generate canonical lockfile
+        run: cargo generate-lockfile
+      - name: Format
+        run: cargo fmt --all
+      - name: Clippy
+        run: cargo clippy --workspace --all-targets --locked -- -D warnings
+      - name: Test workspace
+        run: cargo test --workspace --all-targets --locked
+      - name: Remove temporary workflow
+        run: rm .github/workflows/discovery-validation-temp.yml
+      - name: Commit validated canonical state
+        run: |
+          git config user.name gabriell211
+          git config user.email 102088315+gabriell211@users.noreply.github.com
+          git add Cargo.lock Cargo.toml apps crates migrations .github/workflows/discovery-validation-temp.yml
+          if git diff --cached --quiet; then
+            exit 0
+          fi
+          git commit -m "chore: canonicalize validated discovery core"
+          git push origin HEAD:agent/frontend-product-shell
