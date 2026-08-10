@@ -2233,11 +2233,14 @@ dependencies = [
  "async-trait",
  "axum",
  "chrono",
+ "ipnet",
  "redis",
  "reqwest 0.12.28",
  "serde",
  "serde_json",
  "snm-audit-store",
+ "snm-discovery-core",
+ "snm-discovery-store",
  "snm-domain",
  "snm-inventory-store",
  "snm-ipam-store",
@@ -2248,6 +2251,36 @@ dependencies = [
  "tokio",
  "tower-http",
  "tracing",
+ "uuid",
+]
+
+[[package]]
+name = "snm-discovery-core"
+version = "0.1.0"
+dependencies = [
+ "async-trait",
+ "chrono",
+ "ipnet",
+ "serde",
+ "snm-domain",
+ "thiserror",
+ "tokio",
+]
+
+[[package]]
+name = "snm-discovery-store"
+version = "0.1.0"
+dependencies = [
+ "chrono",
+ "ipnet",
+ "serde",
+ "serde_json",
+ "snm-audit-store",
+ "snm-domain",
+ "snm-platform-events",
+ "snm-security",
+ "sqlx",
+ "thiserror",
  "uuid",
 ]
 
@@ -2267,6 +2300,8 @@ name = "snm-executor-core"
 version = "0.1.0"
 dependencies = [
  "async-trait",
+ "chrono",
+ "libc",
  "serde",
  "snm-domain",
  "thiserror",

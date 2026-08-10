@@ -119,9 +119,10 @@ pub(crate) fn runtime_failure_result(
             (ExecutionStatus::Unknown, "runtime_authentication_failed")
         }
         RuntimeError::RequestRejected => (ExecutionStatus::Unknown, "runtime_request_rejected"),
-        RuntimeError::ResponseIdentityMismatch => {
-            (ExecutionStatus::Unknown, "runtime_response_identity_mismatch")
-        }
+        RuntimeError::ResponseIdentityMismatch => (
+            ExecutionStatus::Unknown,
+            "runtime_response_identity_mismatch",
+        ),
         RuntimeError::InvalidResponse => (ExecutionStatus::Unknown, "runtime_invalid_response"),
     };
     DiscoveryProbeResult {

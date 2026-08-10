@@ -178,9 +178,10 @@ impl NetworkExecutor for DefaultNetworkExecutor {
                 let target = request.target.address;
                 let interface = request.target.interface_scope.clone();
                 let duration = Duration::from_millis(request.timeout_ms);
-                let outcome = spawn_blocking(move || icmp_echo_blocking(target, interface, duration))
-                    .await
-                    .map_err(|error| ExecutorError::LocalExecution(error.to_string()))?;
+                let outcome =
+                    spawn_blocking(move || icmp_echo_blocking(target, interface, duration))
+                        .await
+                        .map_err(|error| ExecutorError::LocalExecution(error.to_string()))?;
                 Ok(outcome.into_result(&request))
             }
             DiscoveryProbeKind::ReverseDns => {
@@ -220,9 +221,11 @@ impl NetworkExecutor for DefaultNetworkExecutor {
                     ));
                 };
                 let duration = Duration::from_millis(request.timeout_ms);
-                let outcome = spawn_blocking(move || arp_resolve_blocking(target, source, &interface, duration))
-                    .await
-                    .map_err(|error| ExecutorError::LocalExecution(error.to_string()))?;
+                let outcome = spawn_blocking(move || {
+                    arp_resolve_blocking(target, source, &interface, duration)
+                })
+                .await
+                .map_err(|error| ExecutorError::LocalExecution(error.to_string()))?;
                 Ok(outcome.into_result(&request))
             }
         }
@@ -349,7 +352,11 @@ struct RawSocket(libc::c_int);
 
 #[cfg(unix)]
 impl RawSocket {
-    fn new(domain: libc::c_int, socket_type: libc::c_int, protocol: libc::c_int) -> io::Result<Self> {
+    fn new(
+        domain: libc::c_int,
+        socket_type: libc::c_int,
+        protocol: libc::c_int,
+    ) -> io::Result<Self> {
         let fd = unsafe { libc::socket(domain, socket_type, protocol) };
         if fd < 0 {
             Err(io::Error::last_os_error())
@@ -432,7 +439,10 @@ fn icmp_echo_blocking(
                 error_code: Some("cap_net_raw_required"),
             },
             Err(error)
-                if matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) =>
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                ) =>
             {
                 BlockingProbeOutcome {
                     status: ExecutionStatus::Failed,
@@ -499,14 +509,8 @@ fn icmp_v4_echo(target: Ipv4Addr, duration: Duration) -> io::Result<()> {
 
     let mut buffer = [0_u8; 2048];
     loop {
-        let received = unsafe {
-            libc::recv(
-                socket.fd(),
-                buffer.as_mut_ptr().cast(),
-                buffer.len(),
-                0,
-            )
-        };
+        let received =
+            unsafe { libc::recv(socket.fd(), buffer.as_mut_ptr().cast(), buffer.len(), 0) };
         if received < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -549,7 +553,10 @@ fn icmp_v6_echo(
     packet[8..].copy_from_slice(b"SNMPING6");
     let scope_id = if target.is_unicast_link_local() {
         let interface = interface_scope.ok_or_else(|| {
-            io::Error::new(io::ErrorKind::InvalidInput, "IPv6 link-local interface is required")
+            io::Error::new(
+                io::ErrorKind::InvalidInput,
+                "IPv6 link-local interface is required",
+            )
         })?;
         interface_index(interface)?
     } else {
@@ -579,14 +586,8 @@ fn icmp_v6_echo(
     }
     let mut buffer = [0_u8; 2048];
     loop {
-        let received = unsafe {
-            libc::recv(
-                socket.fd(),
-                buffer.as_mut_ptr().cast(),
-                buffer.len(),
-                0,
-            )
-        };
+        let received =
+            unsafe { libc::recv(socket.fd(), buffer.as_mut_ptr().cast(), buffer.len(), 0) };
         if received < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -601,10 +602,7 @@ fn icmp_v6_echo(
     }
 }
 
-fn reverse_dns_blocking(
-    target: IpAddr,
-    interface_scope: Option<String>,
-) -> BlockingProbeOutcome {
+fn reverse_dns_blocking(target: IpAddr, interface_scope: Option<String>) -> BlockingProbeOutcome {
     #[cfg(unix)]
     {
         match reverse_dns_name(target, interface_scope.as_deref()) {
@@ -654,7 +652,10 @@ enum ReverseDnsError {
 }
 
 #[cfg(unix)]
-fn reverse_dns_name(target: IpAddr, interface_scope: Option<&str>) -> Result<String, ReverseDnsError> {
+fn reverse_dns_name(
+    target: IpAddr,
+    interface_scope: Option<&str>,
+) -> Result<String, ReverseDnsError> {
     let mut host = [0 as libc::c_char; 1025];
     let result = match target {
         IpAddr::V4(address) => {
@@ -682,7 +683,9 @@ fn reverse_dns_name(target: IpAddr, interface_scope: Option<&str>) -> Result<Str
             let scope_id = if address.is_unicast_link_local() {
                 interface_scope
                     .ok_or(ReverseDnsError::InvalidScope)
-                    .and_then(|value| interface_index(value).map_err(|_| ReverseDnsError::InvalidScope))?
+                    .and_then(|value| {
+                        interface_index(value).map_err(|_| ReverseDnsError::InvalidScope)
+                    })?
             } else {
                 0
             };
@@ -749,7 +752,10 @@ fn arp_resolve_blocking(
                 error_code: Some("cap_net_raw_required"),
             },
             Err(error)
-                if matches!(error.kind(), io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock) =>
+                if matches!(
+                    error.kind(),
+                    io::ErrorKind::TimedOut | io::ErrorKind::WouldBlock
+                ) =>
             {
                 BlockingProbeOutcome {
                     status: ExecutionStatus::Failed,
@@ -846,14 +852,8 @@ fn arp_resolve_linux(
 
     let mut buffer = [0_u8; 2048];
     loop {
-        let received = unsafe {
-            libc::recv(
-                socket.fd(),
-                buffer.as_mut_ptr().cast(),
-                buffer.len(),
-                0,
-            )
-        };
+        let received =
+            unsafe { libc::recv(socket.fd(), buffer.as_mut_ptr().cast(), buffer.len(), 0) };
         if received < 0 {
             return Err(io::Error::last_os_error());
         }
@@ -878,7 +878,10 @@ fn read_interface_mac(interface: &str) -> io::Result<[u8; 6]> {
     let value = std::fs::read_to_string(format!("/sys/class/net/{interface}/address"))?;
     let parts = value.trim().split(':').collect::<Vec<_>>();
     if parts.len() != 6 {
-        return Err(io::Error::new(io::ErrorKind::InvalidData, "invalid interface MAC"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidData,
+            "invalid interface MAC",
+        ));
     }
     let mut mac = [0_u8; 6];
     for (index, part) in parts.into_iter().enumerate() {
@@ -905,11 +908,14 @@ fn interface_index(interface: &str) -> io::Result<u32> {
 fn validate_interface_name(interface: &str) -> io::Result<()> {
     if interface.is_empty()
         || interface.len() > 64
-        || !interface
-            .bytes()
-            .all(|byte| byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':' | b'@'))
+        || !interface.bytes().all(|byte| {
+            byte.is_ascii_alphanumeric() || matches!(byte, b'_' | b'-' | b'.' | b':' | b'@')
+        })
     {
-        return Err(io::Error::new(io::ErrorKind::InvalidInput, "invalid interface name"));
+        return Err(io::Error::new(
+            io::ErrorKind::InvalidInput,
+            "invalid interface name",
+        ));
     }
     Ok(())
 }
@@ -993,7 +999,10 @@ mod tests {
         let executor = DefaultNetworkExecutor::new(NetworkPolicy::default());
         let result = executor.validate_probe_request(&request).unwrap().unwrap();
         assert_eq!(result.status, ExecutionStatus::NotApplicable);
-        assert_eq!(result.error_code.as_deref(), Some("l2_context_not_applicable"));
+        assert_eq!(
+            result.error_code.as_deref(),
+            Some("l2_context_not_applicable")
+        );
     }
 
     #[cfg(unix)]

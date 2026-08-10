@@ -6,8 +6,8 @@ use serde::{Deserialize, Serialize};
 use uuid::Uuid;
 
 use crate::{
-    DomainError, ExecutionContext, ExecutionStatus, OrganizationId, RoutingDomainId, ScopedIpTarget,
-    SiteId,
+    DomainError, ExecutionContext, ExecutionStatus, OrganizationId, RoutingDomainId,
+    ScopedIpTarget, SiteId,
 };
 
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
@@ -320,7 +320,10 @@ impl FingerprintEvidence {
 }
 
 fn same_family(network: IpNet, address: IpAddr) -> bool {
-    matches!((network, address), (IpNet::V4(_), IpAddr::V4(_)) | (IpNet::V6(_), IpAddr::V6(_)))
+    matches!(
+        (network, address),
+        (IpNet::V4(_), IpAddr::V4(_)) | (IpNet::V6(_), IpAddr::V6(_))
+    )
 }
 
 pub fn is_ipv4_network_or_broadcast(network: IpNet, address: IpAddr) -> bool {
@@ -410,9 +413,11 @@ mod tests {
             request("10.0.0.0/24", "10.0.0.255", DiscoveryProbeKind::Icmp).validate(),
             Err(DomainError::InvalidDiscoveryTarget)
         ));
-        assert!(request("10.0.0.0/31", "10.0.0.0", DiscoveryProbeKind::Icmp)
-            .validate()
-            .is_ok());
+        assert!(
+            request("10.0.0.0/31", "10.0.0.0", DiscoveryProbeKind::Icmp)
+                .validate()
+                .is_ok()
+        );
     }
 
     #[test]

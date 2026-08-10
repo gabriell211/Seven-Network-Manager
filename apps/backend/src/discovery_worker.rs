@@ -64,11 +64,9 @@ impl DiscoveryWorker {
     pub(crate) fn spawn(self) -> JoinHandle<()> {
         tokio::spawn(async move {
             loop {
-                if let Err(error) = snm_discovery_store::schedule::enqueue_due_scheduled_runs(
-                    &self.database,
-                    25,
-                )
-                .await
+                if let Err(error) =
+                    snm_discovery_store::schedule::enqueue_due_scheduled_runs(&self.database, 25)
+                        .await
                 {
                     error!(%error, "failed to enqueue scheduled discovery runs");
                 }
@@ -198,12 +196,22 @@ impl DiscoveryWorker {
         let hosts = collect_host_observations(results);
         let prefixes = self
             .ipam
-            .list_prefixes(run.organization_id, run.site_id, Some(run.routing_domain_id))
+            .list_prefixes(
+                run.organization_id,
+                run.site_id,
+                Some(run.routing_domain_id),
+            )
             .await
             .map_err(|error| error.to_string())?;
         let parsed_prefixes = prefixes
             .iter()
-            .filter_map(|prefix| prefix.prefix.parse::<IpNet>().ok().map(|network| (prefix, network)))
+            .filter_map(|prefix| {
+                prefix
+                    .prefix
+                    .parse::<IpNet>()
+                    .ok()
+                    .map(|network| (prefix, network))
+            })
             .collect::<Vec<_>>();
 
         let mut warnings = Vec::new();
@@ -225,10 +233,7 @@ impl DiscoveryWorker {
                 }
             }
             if let Some(mac) = host.mac.clone() {
-                if let Err(error) = self
-                    .reconcile_inventory_host(run, host, mac)
-                    .await
-                {
+                if let Err(error) = self.reconcile_inventory_host(run, host, mac).await {
                     warnings.push(error);
                 }
             }
@@ -425,13 +430,20 @@ struct HostObservation {
     observed: bool,
 }
 
-fn collect_host_observations(results: &[DiscoveryProbeResult]) -> BTreeMap<IpAddr, HostObservation> {
+fn collect_host_observations(
+    results: &[DiscoveryProbeResult],
+) -> BTreeMap<IpAddr, HostObservation> {
     let mut hosts = BTreeMap::new();
     for result in results {
-        if !matches!(result.status, ExecutionStatus::Succeeded | ExecutionStatus::Partial) {
+        if !matches!(
+            result.status,
+            ExecutionStatus::Succeeded | ExecutionStatus::Partial
+        ) {
             continue;
         }
-        let host = hosts.entry(result.target.address).or_insert_with(HostObservation::default);
+        let host = hosts
+            .entry(result.target.address)
+            .or_insert_with(HostObservation::default);
         host.observed = true;
         if let Some(port) = result.port
             && result.status == ExecutionStatus::Succeeded
@@ -439,7 +451,10 @@ fn collect_host_observations(results: &[DiscoveryProbeResult]) -> BTreeMap<IpAdd
             host.open_ports.insert(port);
         }
         for item in &result.evidence {
-            host.last_seen = Some(host.last_seen.map_or(item.observed_at, |current| current.max(item.observed_at)));
+            host.last_seen = Some(
+                host.last_seen
+                    .map_or(item.observed_at, |current| current.max(item.observed_at)),
+            );
             match item.field.as_str() {
                 "mac" if item.confidence >= 0.95 => host.mac = Some(item.value.clone()),
                 "hostname" if item.confidence >= 0.5 => host.hostname = Some(item.value.clone()),

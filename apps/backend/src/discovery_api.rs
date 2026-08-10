@@ -11,8 +11,7 @@ use serde::{Deserialize, Serialize};
 use serde_json::json;
 use snm_audit_store::AuditStore;
 use snm_discovery_store::{
-    DiscoveryStoreError, MutationContext, NewDiscoveryScope, RunRequestKind,
-    UpdateDiscoveryScope,
+    DiscoveryStoreError, MutationContext, NewDiscoveryScope, RunRequestKind, UpdateDiscoveryScope,
 };
 use snm_observability::CorrelationContext;
 use snm_security::audit::{AuditActorType, AuditEventDraft, AuditStatus};
@@ -179,7 +178,11 @@ pub(crate) async fn update_scope(
         Err(response) => return response,
     };
     let context = mutation_context(&principal, site_id, &correlation);
-    match state.discovery.update_scope(&context, scope_id, input).await {
+    match state
+        .discovery
+        .update_scope(&context, scope_id, input)
+        .await
+    {
         Ok(scope) => Json(scope).into_response(),
         Err(error) => discovery_error_response(error),
     }

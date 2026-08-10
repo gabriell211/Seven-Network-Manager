@@ -1,4 +1,7 @@
-use std::{sync::Arc, time::{Duration, Instant}};
+use std::{
+    sync::Arc,
+    time::{Duration, Instant},
+};
 
 use async_trait::async_trait;
 use snm_domain::discovery::DiscoveryProbeResult;
@@ -83,12 +86,8 @@ impl IncrementalDiscoveryOrchestrator {
                 result.port.unwrap_or(0),
             )
         });
-        let summary = RunSummary::from_results(
-            total,
-            &results,
-            orchestration_errors,
-            started.elapsed(),
-        );
+        let summary =
+            RunSummary::from_results(total, &results, orchestration_errors, started.elapsed());
         DiscoveryRunOutcome {
             status: final_status(&summary, cancellation.is_cancelled()),
             results,

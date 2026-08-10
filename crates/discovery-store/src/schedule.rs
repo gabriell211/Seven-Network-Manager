@@ -5,8 +5,7 @@ use sqlx::{PgPool, Row};
 use uuid::Uuid;
 
 use crate::{
-    DiscoveryStoreError, MutationContext, MutationRecord, load_scope_in_tx,
-    write_mutation_records,
+    DiscoveryStoreError, MutationContext, MutationRecord, load_scope_in_tx, write_mutation_records,
 };
 
 pub async fn enqueue_due_scheduled_runs(

@@ -11,9 +11,7 @@ use axum::{
 };
 use serde::Serialize;
 use snm_domain::{
-    TcpConnectRequest,
-    discovery::DiscoveryProbeRequest,
-    runtime_contract::DiscoveryProbeResponse,
+    TcpConnectRequest, discovery::DiscoveryProbeRequest, runtime_contract::DiscoveryProbeResponse,
 };
 use snm_executor_core::{DefaultNetworkExecutor, NetworkExecutor, NetworkPolicy};
 use snm_observability::{CorrelationContext, TelemetryConfig};
@@ -252,13 +250,10 @@ fn executor_error_response(error: snm_executor_core::ExecutorError) -> Response 
             StatusCode::UNPROCESSABLE_ENTITY,
             "invalid_execution_request",
         ),
-        snm_executor_core::ExecutorError::TargetDenied => {
-            (StatusCode::FORBIDDEN, "target_denied")
+        snm_executor_core::ExecutorError::TargetDenied => (StatusCode::FORBIDDEN, "target_denied"),
+        snm_executor_core::ExecutorError::LocalExecution(_) => {
+            (StatusCode::INTERNAL_SERVER_ERROR, "local_execution_error")
         }
-        snm_executor_core::ExecutorError::LocalExecution(_) => (
-            StatusCode::INTERNAL_SERVER_ERROR,
-            "local_execution_error",
-        ),
     };
     (
         status,

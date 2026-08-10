@@ -175,12 +175,11 @@ impl DiscoveryStore {
         if current.has_active_run {
             return Err(DiscoveryStoreError::ScopeHasActiveRun);
         }
-        let history_exists: bool = sqlx::query_scalar(
-            "SELECT EXISTS (SELECT 1 FROM discovery_runs WHERE scope_id = $1)",
-        )
-        .bind(scope_id)
-        .fetch_one(&mut *tx)
-        .await?;
+        let history_exists: bool =
+            sqlx::query_scalar("SELECT EXISTS (SELECT 1 FROM discovery_runs WHERE scope_id = $1)")
+                .bind(scope_id)
+                .fetch_one(&mut *tx)
+                .await?;
         if history_exists {
             return Err(DiscoveryStoreError::ScopeHasHistory);
         }
@@ -244,7 +243,10 @@ impl DiscoveryStore {
             return Err(DiscoveryStoreError::ScopeHasActiveRun);
         }
         let run_id = Uuid::now_v7();
-        let seed_text = seed_targets.iter().map(ToString::to_string).collect::<Vec<_>>();
+        let seed_text = seed_targets
+            .iter()
+            .map(ToString::to_string)
+            .collect::<Vec<_>>();
         sqlx::query(
             r#"
             INSERT INTO discovery_runs (
@@ -538,7 +540,11 @@ impl DiscoveryStore {
         .bind(result.probe.as_str())
         .bind(result.port.map(i32::from))
         .bind(execution_status_str(&result.status))
-        .bind(result.latency_ms.and_then(|value| i64::try_from(value).ok()))
+        .bind(
+            result
+                .latency_ms
+                .and_then(|value| i64::try_from(value).ok()),
+        )
         .bind(result.error_code.as_deref())
         .bind(i32::try_from(result.evidence.len()).unwrap_or(i32::MAX))
         .bind(observed_at)
@@ -602,7 +608,9 @@ impl DiscoveryStore {
         error_code: Option<&str>,
     ) -> Result<DiscoveryRunView, DiscoveryStoreError> {
         if !is_terminal(status) {
-            return Err(DiscoveryStoreError::InvalidInput("finish status must be terminal"));
+            return Err(DiscoveryStoreError::InvalidInput(
+                "finish status must be terminal",
+            ));
         }
         let mut tx = self.pool.begin().await?;
         let current = load_run_by_id_in_tx(&mut tx, run_id, true)
@@ -748,7 +756,9 @@ impl NewDiscoveryScope {
             .schedule_interval_seconds
             .is_some_and(|value| !(60..=2_592_000).contains(&value))
         {
-            return Err(DiscoveryStoreError::InvalidInput("schedule interval is invalid"));
+            return Err(DiscoveryStoreError::InvalidInput(
+                "schedule interval is invalid",
+            ));
         }
         let scope = DiscoveryScope {
             id: Uuid::nil(),
@@ -762,7 +772,9 @@ impl NewDiscoveryScope {
             rate_per_second: self.rate_per_second,
             timeout_ms: self.timeout_ms,
         };
-        scope.validate().map_err(DiscoveryStoreError::InvalidInput)?;
+        scope
+            .validate()
+            .map_err(DiscoveryStoreError::InvalidInput)?;
         let execution_scope = DiscoveryExecutionScope {
             organization_id: OrganizationId(context.organization_id),
             site_id: SiteId(context.site_id),
@@ -979,8 +991,16 @@ async fn insert_scope(
     scope_id: Uuid,
     input: &NewDiscoveryScope,
 ) -> Result<(), DiscoveryStoreError> {
-    let observations = input.observations.iter().map(|value| value.as_str()).collect::<Vec<_>>();
-    let ports = input.tcp_ports.iter().map(|value| i32::from(*value)).collect::<Vec<_>>();
+    let observations = input
+        .observations
+        .iter()
+        .map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let ports = input
+        .tcp_ports
+        .iter()
+        .map(|value| i32::from(*value))
+        .collect::<Vec<_>>();
     sqlx::query(
         r#"
         INSERT INTO discovery_scopes (
@@ -1023,8 +1043,16 @@ async fn update_scope_row(
     scope_id: Uuid,
     input: &NewDiscoveryScope,
 ) -> Result<(), DiscoveryStoreError> {
-    let observations = input.observations.iter().map(|value| value.as_str()).collect::<Vec<_>>();
-    let ports = input.tcp_ports.iter().map(|value| i32::from(*value)).collect::<Vec<_>>();
+    let observations = input
+        .observations
+        .iter()
+        .map(|value| value.as_str())
+        .collect::<Vec<_>>();
+    let ports = input
+        .tcp_ports
+        .iter()
+        .map(|value| i32::from(*value))
+        .collect::<Vec<_>>();
     sqlx::query(
         r#"
         UPDATE discovery_scopes
@@ -1051,14 +1079,20 @@ async fn update_scope_row(
     .bind(input.ipv6_strategy.map(|value| value.as_str()))
     .bind(i32::from(input.concurrency_limit))
     .bind(i32::from(input.rate_per_second))
-    .bind(i32::try_from(input.timeout_ms).map_err(|_| DiscoveryStoreError::InvalidInput("timeout is invalid"))?)
+    .bind(
+        i32::try_from(input.timeout_ms)
+            .map_err(|_| DiscoveryStoreError::InvalidInput("timeout is invalid"))?,
+    )
     .bind(input.enabled)
     .bind(input.name.trim())
     .bind(observations)
     .bind(ports)
     .bind(clean_optional(input.interface_scope.clone()))
     .bind(input.source_address.map(|value| value.to_string()))
-    .bind(i32::try_from(input.max_targets).map_err(|_| DiscoveryStoreError::InvalidInput("max targets is invalid"))?)
+    .bind(
+        i32::try_from(input.max_targets)
+            .map_err(|_| DiscoveryStoreError::InvalidInput("max targets is invalid"))?,
+    )
     .bind(input.schedule_interval_seconds.map(|value| value as i32))
     .execute(&mut **tx)
     .await
@@ -1148,17 +1182,50 @@ fn row_to_scope(row: sqlx::postgres::PgRow) -> Result<DiscoveryScopeView, Discov
         site_id: row.try_get("site_id")?,
         routing_domain_id: row.try_get("routing_domain_id")?,
         name: row.try_get("name")?,
-        network: network.parse().map_err(|_| DiscoveryStoreError::InvalidStoredValue("scope network is invalid"))?,
-        observations: observations.iter().map(|value| parse_observation(value)).collect::<Result<Vec<_>, _>>()?,
-        tcp_ports: ports.into_iter().map(|value| u16::try_from(value).map_err(|_| DiscoveryStoreError::InvalidStoredValue("TCP port is invalid"))).collect::<Result<Vec<_>, _>>()?,
-        ipv6_strategy: row.try_get::<Option<String>, _>("ipv6_strategy")?.as_deref().map(parse_ipv6_strategy).transpose()?,
+        network: network
+            .parse()
+            .map_err(|_| DiscoveryStoreError::InvalidStoredValue("scope network is invalid"))?,
+        observations: observations
+            .iter()
+            .map(|value| parse_observation(value))
+            .collect::<Result<Vec<_>, _>>()?,
+        tcp_ports: ports
+            .into_iter()
+            .map(|value| {
+                u16::try_from(value)
+                    .map_err(|_| DiscoveryStoreError::InvalidStoredValue("TCP port is invalid"))
+            })
+            .collect::<Result<Vec<_>, _>>()?,
+        ipv6_strategy: row
+            .try_get::<Option<String>, _>("ipv6_strategy")?
+            .as_deref()
+            .map(parse_ipv6_strategy)
+            .transpose()?,
         interface_scope: row.try_get("interface_scope")?,
-        source_address: row.try_get::<Option<String>, _>("source_address")?.map(|value| value.parse().map_err(|_| DiscoveryStoreError::InvalidStoredValue("source address is invalid"))).transpose()?,
-        concurrency_limit: u16::try_from(row.try_get::<i32, _>("concurrency_limit")?).map_err(|_| DiscoveryStoreError::InvalidStoredValue("concurrency is invalid"))?,
-        rate_per_second: u16::try_from(row.try_get::<i32, _>("rate_per_second")?).map_err(|_| DiscoveryStoreError::InvalidStoredValue("rate is invalid"))?,
-        timeout_ms: u32::try_from(row.try_get::<i32, _>("timeout_ms")?).map_err(|_| DiscoveryStoreError::InvalidStoredValue("timeout is invalid"))?,
-        max_targets: u32::try_from(row.try_get::<i32, _>("max_targets")?).map_err(|_| DiscoveryStoreError::InvalidStoredValue("max targets is invalid"))?,
-        schedule_interval_seconds: row.try_get::<Option<i32>, _>("schedule_interval_seconds")?.map(|value| u32::try_from(value).map_err(|_| DiscoveryStoreError::InvalidStoredValue("schedule interval is invalid"))).transpose()?,
+        source_address: row
+            .try_get::<Option<String>, _>("source_address")?
+            .map(|value| {
+                value.parse().map_err(|_| {
+                    DiscoveryStoreError::InvalidStoredValue("source address is invalid")
+                })
+            })
+            .transpose()?,
+        concurrency_limit: u16::try_from(row.try_get::<i32, _>("concurrency_limit")?)
+            .map_err(|_| DiscoveryStoreError::InvalidStoredValue("concurrency is invalid"))?,
+        rate_per_second: u16::try_from(row.try_get::<i32, _>("rate_per_second")?)
+            .map_err(|_| DiscoveryStoreError::InvalidStoredValue("rate is invalid"))?,
+        timeout_ms: u32::try_from(row.try_get::<i32, _>("timeout_ms")?)
+            .map_err(|_| DiscoveryStoreError::InvalidStoredValue("timeout is invalid"))?,
+        max_targets: u32::try_from(row.try_get::<i32, _>("max_targets")?)
+            .map_err(|_| DiscoveryStoreError::InvalidStoredValue("max targets is invalid"))?,
+        schedule_interval_seconds: row
+            .try_get::<Option<i32>, _>("schedule_interval_seconds")?
+            .map(|value| {
+                u32::try_from(value).map_err(|_| {
+                    DiscoveryStoreError::InvalidStoredValue("schedule interval is invalid")
+                })
+            })
+            .transpose()?,
         next_run_at: row.try_get("next_run_at")?,
         last_run_at: row.try_get("last_run_at")?,
         enabled: row.try_get("enabled")?,
@@ -1181,7 +1248,14 @@ fn row_to_run(row: sqlx::postgres::PgRow) -> Result<DiscoveryRunView, DiscoveryS
         correlation_id: row.try_get("correlation_id")?,
         requested_by: row.try_get("requested_by")?,
         request_kind: parse_request_kind(&row.try_get::<String, _>("request_kind")?)?,
-        seed_targets: seeds.into_iter().map(|value| value.parse().map_err(|_| DiscoveryStoreError::InvalidStoredValue("seed target is invalid"))).collect::<Result<Vec<_>, _>>()?,
+        seed_targets: seeds
+            .into_iter()
+            .map(|value| {
+                value
+                    .parse()
+                    .map_err(|_| DiscoveryStoreError::InvalidStoredValue("seed target is invalid"))
+            })
+            .collect::<Result<Vec<_>, _>>()?,
         scope_snapshot: row.try_get("scope_snapshot")?,
         cancellation_requested_at: row.try_get("cancellation_requested_at")?,
         progress_total: row.try_get("progress_total")?,
@@ -1204,12 +1278,22 @@ fn row_to_probe_result(row: sqlx::postgres::PgRow) -> Result<ProbeResultView, Di
         organization_id: row.try_get("organization_id")?,
         site_id: row.try_get("site_id")?,
         routing_domain_id: row.try_get("routing_domain_id")?,
-        address: address.parse().map_err(|_| DiscoveryStoreError::InvalidStoredValue("address is invalid"))?,
+        address: address
+            .parse()
+            .map_err(|_| DiscoveryStoreError::InvalidStoredValue("address is invalid"))?,
         interface_scope: row.try_get("interface_scope")?,
         probe_kind: row.try_get("probe_kind")?,
-        port: row.try_get::<Option<i32>, _>("port")?.map(|value| u16::try_from(value).map_err(|_| DiscoveryStoreError::InvalidStoredValue("port is invalid"))).transpose()?,
+        port: row
+            .try_get::<Option<i32>, _>("port")?
+            .map(|value| {
+                u16::try_from(value)
+                    .map_err(|_| DiscoveryStoreError::InvalidStoredValue("port is invalid"))
+            })
+            .transpose()?,
         status: parse_execution_status(&row.try_get::<String, _>("status")?)?,
-        latency_ms: row.try_get::<Option<i64>, _>("latency_ms")?.map(|value| u64::try_from(value).unwrap_or(0)),
+        latency_ms: row
+            .try_get::<Option<i64>, _>("latency_ms")?
+            .map(|value| u64::try_from(value).unwrap_or(0)),
         error_code: row.try_get("error_code")?,
         evidence_count: row.try_get("evidence_count")?,
         observed_at: row.try_get("observed_at")?,
@@ -1223,7 +1307,9 @@ fn parse_observation(value: &str) -> Result<ObservationKind, DiscoveryStoreError
         "reverse_dns" => Ok(ObservationKind::ReverseDns),
         "service" => Ok(ObservationKind::Service),
         "management_protocol" => Ok(ObservationKind::ManagementProtocol),
-        _ => Err(DiscoveryStoreError::InvalidStoredValue("observation kind is invalid")),
+        _ => Err(DiscoveryStoreError::InvalidStoredValue(
+            "observation kind is invalid",
+        )),
     }
 }
 
@@ -1233,7 +1319,9 @@ fn parse_ipv6_strategy(value: &str) -> Result<Ipv6DiscoveryStrategy, DiscoverySt
         "neighbor_evidence" => Ok(Ipv6DiscoveryStrategy::NeighborEvidence),
         "dns_evidence" => Ok(Ipv6DiscoveryStrategy::DnsEvidence),
         "provider_inventory" => Ok(Ipv6DiscoveryStrategy::ProviderInventory),
-        _ => Err(DiscoveryStoreError::InvalidStoredValue("IPv6 strategy is invalid")),
+        _ => Err(DiscoveryStoreError::InvalidStoredValue(
+            "IPv6 strategy is invalid",
+        )),
     }
 }
 
@@ -1245,7 +1333,9 @@ fn parse_status(value: &str) -> Result<DiscoveryStatus, DiscoveryStoreError> {
         "partial" => Ok(DiscoveryStatus::Partial),
         "failed" => Ok(DiscoveryStatus::Failed),
         "cancelled" => Ok(DiscoveryStatus::Cancelled),
-        _ => Err(DiscoveryStoreError::InvalidStoredValue("run status is invalid")),
+        _ => Err(DiscoveryStoreError::InvalidStoredValue(
+            "run status is invalid",
+        )),
     }
 }
 
@@ -1253,7 +1343,9 @@ fn parse_request_kind(value: &str) -> Result<RunRequestKind, DiscoveryStoreError
     match value {
         "manual" => Ok(RunRequestKind::Manual),
         "scheduled" => Ok(RunRequestKind::Scheduled),
-        _ => Err(DiscoveryStoreError::InvalidStoredValue("request kind is invalid")),
+        _ => Err(DiscoveryStoreError::InvalidStoredValue(
+            "request kind is invalid",
+        )),
     }
 }
 
@@ -1266,7 +1358,9 @@ fn parse_execution_status(value: &str) -> Result<ExecutionStatus, DiscoveryStore
         "cancelled" => Ok(ExecutionStatus::Cancelled),
         "unsupported" => Ok(ExecutionStatus::Unsupported),
         "not_applicable" => Ok(ExecutionStatus::NotApplicable),
-        _ => Err(DiscoveryStoreError::InvalidStoredValue("execution status is invalid")),
+        _ => Err(DiscoveryStoreError::InvalidStoredValue(
+            "execution status is invalid",
+        )),
     }
 }
 
@@ -1296,7 +1390,10 @@ fn validate_seeds(seeds: &[IpAddr]) -> Result<(), DiscoveryStoreError> {
     if seeds.len() > 65_536 {
         return Err(DiscoveryStoreError::InvalidInput("too many seed targets"));
     }
-    if seeds.iter().any(|value| value.is_unspecified() || value.is_multicast()) {
+    if seeds
+        .iter()
+        .any(|value| value.is_unspecified() || value.is_multicast())
+    {
         return Err(DiscoveryStoreError::InvalidInput("seed target is invalid"));
     }
     Ok(())
@@ -1311,7 +1408,9 @@ fn validate_page(limit: i64, offset: i64, max: i64) -> Result<(), DiscoveryStore
 }
 
 fn clean_optional(value: Option<String>) -> Option<String> {
-    value.map(|value| value.trim().to_owned()).filter(|value| !value.is_empty())
+    value
+        .map(|value| value.trim().to_owned())
+        .filter(|value| !value.is_empty())
 }
 
 fn map_scope_database_error(error: sqlx::Error) -> DiscoveryStoreError {
@@ -1516,7 +1615,10 @@ mod tests {
         let first_scope = store.create_scope(&context, input(first)).await.unwrap();
         let second_scope = store.create_scope(&context, input(second)).await.unwrap();
         assert_eq!(first_scope.network, second_scope.network);
-        assert_ne!(first_scope.routing_domain_id, second_scope.routing_domain_id);
+        assert_ne!(
+            first_scope.routing_domain_id,
+            second_scope.routing_domain_id
+        );
     }
 
     #[tokio::test]
@@ -1524,12 +1626,19 @@ mod tests {
         let Some(pool) = pool().await else { return };
         let (context, routing_domain_id, _) = scope_context(&pool).await;
         let store = DiscoveryStore::new(pool);
-        let scope = store.create_scope(&context, input(routing_domain_id)).await.unwrap();
+        let scope = store
+            .create_scope(&context, input(routing_domain_id))
+            .await
+            .unwrap();
         let run = store
             .create_run(&context, scope.id, RunRequestKind::Manual, Vec::new())
             .await
             .unwrap();
-        let input = store.claim_next_queued_run(Some(context.organization_id)).await.unwrap().unwrap();
+        let input = store
+            .claim_next_queued_run(Some(context.organization_id))
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(input.run.id, run.id);
         store.set_progress_total(run.id, 2).await.unwrap();
         let result = DiscoveryProbeResult {
@@ -1549,7 +1658,11 @@ mod tests {
         };
         store.record_probe_result(run.id, &result).await.unwrap();
         store.record_probe_result(run.id, &result).await.unwrap();
-        let current = store.get_run(context.organization_id, context.site_id, run.id).await.unwrap().unwrap();
+        let current = store
+            .get_run(context.organization_id, context.site_id, run.id)
+            .await
+            .unwrap()
+            .unwrap();
         assert_eq!(current.progress_completed, 1);
     }
 }

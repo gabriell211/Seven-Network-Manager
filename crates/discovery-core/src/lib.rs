@@ -164,16 +164,12 @@ impl DiscoveryRunPlan {
             };
             for observation in &self.observations {
                 match observation {
-                    ObservationKind::Reachability => requests.push(self.request(
-                        target.clone(),
-                        DiscoveryProbeKind::Icmp,
-                        None,
-                    )),
-                    ObservationKind::Neighbor => requests.push(self.request(
-                        target.clone(),
-                        DiscoveryProbeKind::Arp,
-                        None,
-                    )),
+                    ObservationKind::Reachability => {
+                        requests.push(self.request(target.clone(), DiscoveryProbeKind::Icmp, None))
+                    }
+                    ObservationKind::Neighbor => {
+                        requests.push(self.request(target.clone(), DiscoveryProbeKind::Arp, None))
+                    }
                     ObservationKind::ReverseDns => requests.push(self.request(
                         target.clone(),
                         DiscoveryProbeKind::ReverseDns,
@@ -279,16 +275,14 @@ impl DiscoveryOrchestrator {
         while let Some(joined) = tasks.join_next().await {
             match joined {
                 Ok(Ok(result)) => results.push(result),
-                Ok(Err(_)) | Err(_) => orchestration_errors = orchestration_errors.saturating_add(1),
+                Ok(Err(_)) | Err(_) => {
+                    orchestration_errors = orchestration_errors.saturating_add(1)
+                }
             }
         }
         sort_results(&mut results);
-        let summary = RunSummary::from_results(
-            total,
-            &results,
-            orchestration_errors,
-            started.elapsed(),
-        );
+        let summary =
+            RunSummary::from_results(total, &results, orchestration_errors, started.elapsed());
         DiscoveryRunOutcome {
             status: final_status(&summary, cancellation.is_cancelled()),
             results,
@@ -440,7 +434,12 @@ fn normalize_ports(ports: &[u16]) -> Result<Vec<u16>, DiscoveryError> {
     if ports.contains(&0) {
         return Err(DiscoveryError::InvalidTcpPort);
     }
-    Ok(ports.iter().copied().collect::<BTreeSet<_>>().into_iter().collect())
+    Ok(ports
+        .iter()
+        .copied()
+        .collect::<BTreeSet<_>>()
+        .into_iter()
+        .collect())
 }
 
 pub(crate) fn final_status(summary: &RunSummary, cancelled: bool) -> DiscoveryStatus {
@@ -670,15 +669,9 @@ mod tests {
             "10.0.0.0/30",
             vec![ObservationKind::Reachability, ObservationKind::Service],
         );
-        let plan = DiscoveryRunPlan::from_scope(
-            context,
-            &scope,
-            execution_scope,
-            &[],
-            &[443],
-            Some(10),
-        )
-        .unwrap();
+        let plan =
+            DiscoveryRunPlan::from_scope(context, &scope, execution_scope, &[], &[443], Some(10))
+                .unwrap();
         let outcome = DiscoveryOrchestrator::new(Arc::new(FakeExecutor {
             calls: Arc::new(AtomicUsize::new(0)),
             fail_tcp: true,
@@ -698,15 +691,9 @@ mod tests {
             "10.0.0.0/29",
             vec![ObservationKind::Reachability, ObservationKind::ReverseDns],
         );
-        let plan = DiscoveryRunPlan::from_scope(
-            context,
-            &scope,
-            execution_scope,
-            &[],
-            &[],
-            Some(20),
-        )
-        .unwrap();
+        let plan =
+            DiscoveryRunPlan::from_scope(context, &scope, execution_scope, &[], &[], Some(20))
+                .unwrap();
         let calls = Arc::new(AtomicUsize::new(0));
         let cancellation = CancellationToken::new();
         let cancel_clone = cancellation.clone();
