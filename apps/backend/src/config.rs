@@ -38,20 +38,10 @@ impl BackendConfig {
         let redis_url = required(&mut read, "REDIS_URL")?;
         require_scheme("REDIS_URL", &redis_url, &["redis://", "rediss://"])?;
 
-        let database_max_connections = parse_bounded_u32(
-            &mut read,
-            "SNM_DATABASE_MAX_CONNECTIONS",
-            10,
-            1,
-            100,
-        )?;
-        let request_timeout_ms = parse_bounded_u64(
-            &mut read,
-            "SNM_REQUEST_TIMEOUT_MS",
-            15_000,
-            100,
-            120_000,
-        )?;
+        let database_max_connections =
+            parse_bounded_u32(&mut read, "SNM_DATABASE_MAX_CONNECTIONS", 10, 1, 100)?;
+        let request_timeout_ms =
+            parse_bounded_u64(&mut read, "SNM_REQUEST_TIMEOUT_MS", 15_000, 100, 120_000)?;
         let body_limit_bytes = parse_bounded_usize(
             &mut read,
             "SNM_HTTP_BODY_LIMIT_BYTES",
@@ -111,11 +101,7 @@ fn normalized_http_url(name: &'static str, value: String) -> Result<String, Conf
     }
 }
 
-fn require_scheme(
-    name: &'static str,
-    value: &str,
-    allowed: &[&str],
-) -> Result<(), ConfigError> {
+fn require_scheme(name: &'static str, value: &str, allowed: &[&str]) -> Result<(), ConfigError> {
     if allowed.iter().any(|scheme| value.starts_with(scheme)) {
         Ok(())
     } else {
@@ -123,11 +109,7 @@ fn require_scheme(
     }
 }
 
-fn parse_bool(
-    value: Option<&str>,
-    default: bool,
-    name: &'static str,
-) -> Result<bool, ConfigError> {
+fn parse_bool(value: Option<&str>, default: bool, name: &'static str) -> Result<bool, ConfigError> {
     let Some(value) = value else {
         return Ok(default);
     };
