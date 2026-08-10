@@ -3,24 +3,30 @@
 import Link from "next/link";
 import { usePathname } from "next/navigation";
 
+import type { OperationalContext } from "@/src/generated/api-contract";
+
 import { Icon, type IconName } from "./icon";
 
-const navigation: ReadonlyArray<{ href: string; label: string; icon: IconName }> = [
-  { href: "/", label: "Dashboard", icon: "dashboard" },
-  { href: "/inventory", label: "Inventário", icon: "inventory" },
-  { href: "/ipam", label: "IPAM", icon: "ipam" },
-  { href: "/discovery", label: "Discovery", icon: "discovery" },
-  { href: "/telemetry", label: "Telemetria", icon: "telemetry" },
-];
+interface NavigationItem {
+  href: string;
+  label: string;
+  icon: IconName;
+  available: boolean;
+}
 
-export function PrimaryNavigation() {
+export function PrimaryNavigation({ context }: { context: OperationalContext | null }) {
   const pathname = usePathname();
+  const canViewInventory = context?.sites.some((site) => site.permissions.includes("devices.view")) ?? false;
+  const navigation: NavigationItem[] = [
+    { href: "/", label: "Dashboard", icon: "dashboard", available: true },
+    { href: "/inventory", label: "Inventário", icon: "inventory", available: canViewInventory },
+    { href: "/api-docs", label: "Contrato API", icon: "settings", available: true },
+  ];
 
   return (
     <nav aria-label="Navegação principal" className="primary-nav">
-      {navigation.map((item) => {
+      {navigation.filter((item) => item.available).map((item) => {
         const active = item.href === "/" ? pathname === "/" : pathname.startsWith(item.href);
-
         return (
           <Link
             aria-current={active ? "page" : undefined}
