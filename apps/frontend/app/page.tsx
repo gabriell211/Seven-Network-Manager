@@ -1,48 +1,27 @@
 import Link from "next/link";
+import { redirect } from "next/navigation";
 
-import { Icon, type IconName } from "@/src/components/icon";
+import { Icon } from "@/src/components/icon";
+import { OperationalIcon } from "@/src/components/operational-icon";
 import { StatusCard } from "@/src/components/status-card";
 import { getPlatformSnapshot } from "@/src/lib/api";
-
-const modules: ReadonlyArray<{
-  href: string;
-  icon: IconName;
-  title: string;
-  description: string;
-}> = [
-  {
-    href: "/inventory",
-    icon: "inventory",
-    title: "Inventário",
-    description: "Ativos, identidade técnica, lifecycle e contexto de site.",
-  },
-  {
-    href: "/ipam",
-    icon: "ipam",
-    title: "IPAM",
-    description: "IPv4, IPv6 e routing domains com isolamento explícito.",
-  },
-  {
-    href: "/discovery",
-    icon: "discovery",
-    title: "Discovery",
-    description: "Descoberta controlada pela execução headless no site-runtime.",
-  },
-  {
-    href: "/telemetry",
-    icon: "telemetry",
-    title: "Telemetria",
-    description: "Saúde, observabilidade, checks e sinais operacionais.",
-  },
-];
+import { getOperationalContext } from "@/src/lib/session";
 
 export default async function Home() {
-  const snapshot = await getPlatformSnapshot();
+  const [snapshot, context] = await Promise.all([
+    getPlatformSnapshot(),
+    getOperationalContext(),
+  ]);
+  if (!context.ok && context.status === 401) redirect("/login");
+
   const { readiness, system } = snapshot;
   const backendStatus = system ? "ready" : "offline";
   const runtimeStatus = toCardStatus(readiness?.runtime);
   const databaseStatus = toCardStatus(readiness?.database);
   const redisStatus = toCardStatus(readiness?.redis);
+  const canViewInventory = context.ok
+    ? context.data.sites.some((site) => site.permissions.includes("devices.view"))
+    : false;
 
   return (
     <div className="page-stack">
@@ -105,23 +84,42 @@ export default async function Home() {
         <div className="section-heading">
           <div>
             <span className="eyebrow">Operação</span>
-            <h2 id="modules-title">Módulos do sistema</h2>
+            <h2 id="modules-title">Capabilities disponíveis nesta sessão</h2>
           </div>
-          <span className="section-heading__note">Rotas reais, sem atalhos decorativos</span>
+          <span className="section-heading__note">Somente recursos com contrato real e autorização efetiva</span>
         </div>
 
         <div className="module-grid">
-          {modules.map((module) => (
-            <Link className="module-card" href={module.href} key={module.href}>
-              <span className="module-card__icon"><Icon name={module.icon} size={22} /></span>
+          {canViewInventory ? (
+            <Link className="module-card" href="/inventory">
+              <span className="module-card__icon"><Icon name="inventory" size={22} /></span>
               <div>
-                <strong>{module.title}</strong>
-                <p>{module.description}</p>
+                <strong>Inventário</strong>
+                <p>Ativos, identidade técnica, lifecycle e contexto de site persistidos no PostgreSQL.</p>
               </div>
               <span aria-hidden="true" className="module-card__arrow">→</span>
             </Link>
-          ))}
+          ) : null}
+          <Link className="module-card" href="/api-docs">
+            <span className="module-card__icon"><Icon name="settings" size={22} /></span>
+            <div>
+              <strong>Contrato REST</strong>
+              <p>Operações e schemas publicados pela especificação OpenAPI versionada.</p>
+            </div>
+            <span aria-hidden="true" className="module-card__arrow">→</span>
+          </Link>
         </div>
+
+        {!canViewInventory ? (
+          <div className="operational-state">
+            <span className="operational-state__icon"><OperationalIcon name="lock" size={22} /></span>
+            <div>
+              <span className="eyebrow">Least privilege</span>
+              <h2>Nenhuma capability operacional autorizada</h2>
+              <p>A sessão não possui <code>devices.view</code> em nenhum site. O painel não exibe módulos aos quais o backend não concede acesso.</p>
+            </div>
+          </div>
+        ) : null}
       </section>
 
       <section aria-labelledby="boundary-title" className="boundary-card">
