@@ -126,14 +126,38 @@ pub(crate) async fn get_context(
 
     let mut sites = Vec::with_capacity(rows.len());
     for (id, slug, name, timezone, routing_domain_id, routing_domain_name) in rows {
-        let permissions = match state
-            .authorization
-            .permissions_for_site(&principal, id)
-            .await
+        let permissions = match sqlx::query_scalar::<_, String>(
+            r#"
+            SELECT DISTINCT p.code
+            FROM role_bindings rb
+            JOIN roles r ON r.id = rb.role_id
+            JOIN role_permissions rp ON rp.role_id = rb.role_id
+            JOIN permissions p ON p.id = rp.permission_id
+            WHERE rb.organization_id = $1
+              AND rb.user_id = $2
+              AND (rb.site_id IS NULL OR rb.site_id = $3)
+              AND (r.organization_id IS NULL OR r.organization_id = $1)
+            ORDER BY p.code
+            "#,
+        )
+        .bind(principal.organization_id)
+        .bind(principal.user_id)
+        .bind(id)
+        .fetch_all(state.database.pool())
+        .await
         {
             Ok(permissions) => permissions,
-            Err(error) => return authorization_error(error, &correlation),
+            Err(error) => {
+                tracing::error!(error = %error, site_id = %id, "failed to load effective site permissions");
+                return api_error(
+                    StatusCode::SERVICE_UNAVAILABLE,
+                    "authorization_unavailable",
+                    "authorization subsystem is temporarily unavailable",
+                    &correlation,
+                );
+            }
         };
+
         let default_routing_domain = routing_domain_id.map(|domain_id| RoutingDomainView {
             id: domain_id,
             name: routing_domain_name.unwrap_or_else(|| "default".to_owned()),
