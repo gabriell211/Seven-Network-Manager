@@ -1,0 +1,5 @@
+.topbar__context > span:last-child { color: var(--muted); font-size: .76rem; margin-top: 2px; }
+.icon-action { min-height: 36px; display: inline-flex; align-items: center; justify-content: center; gap: 7px; padding: 0 11px; border: 1px solid var(--border); border-radius: 10px; background: var(--panel); color: var(--text); text-decoration: none; font: inherit; font-size: .8rem; cursor: pointer; }
+.icon-action:hover { border-color: color-mix(in srgb, var(--accent) 42%, var(--border)); background: var(--panel-strong); }
+.icon-action:disabled { cursor: progress; opacity: .58; }
+@media (max-width: 720px) { .icon-action span { display: none; } }

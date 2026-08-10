@@ -1,0 +1,45 @@
+name: oui-snapshot-freshness
+
+on:
+  schedule:
+    - cron: "23 6 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  verify:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - name: Validate committed snapshot structure
+        shell: python
+        run: |
+          import csv
+          import json
+          import re
+          from pathlib import Path
+
+          snapshot = Path("data/oui/ieee.csv")
+          metadata_path = Path("data/oui/metadata.json")
+          rows = list(csv.DictReader(snapshot.open(encoding="utf-8")))
+          metadata = json.loads(metadata_path.read_text(encoding="utf-8"))
+          assert len(rows) > 10_000, "IEEE snapshot is unexpectedly small"
+          assert metadata["recordCount"] == len(rows), "metadata recordCount is stale"
+          sources = {item["registry"]: item for item in metadata["sources"]}
+          assert set(sources) == {"MA-L", "MA-M", "MA-S"}
+          for registry, source in sources.items():
+              assert source["url"].startswith("https://standards-oui.ieee.org/")
+              assert re.fullmatch(r"[0-9a-f]{64}", source["sha256"])
+              assert source["registry"] == registry
+      - name: Rebuild from official IEEE registries
+        run: python scripts/update_ieee_oui.py
+      - name: Require committed snapshot to match current IEEE data
+        shell: bash
+        run: |
+          set -euo pipefail
+          if ! git diff --exit-code -- data/oui/ieee.csv data/oui/metadata.json; then
+            echo "IEEE OUI snapshot is stale. Run: python scripts/update_ieee_oui.py"
+            exit 1
+          fi

@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env, net::SocketAddr, time::Duration};
+use std::{env, net::SocketAddr, time::Duration};
 
 use thiserror::Error;
 
@@ -6,6 +6,7 @@ use thiserror::Error;
 pub(crate) struct BackendConfig {
     pub(crate) bind: SocketAddr,
     pub(crate) runtime_url: String,
+    pub(crate) runtime_token: String,
     pub(crate) database_url: String,
     pub(crate) redis_url: String,
     pub(crate) database_max_connections: u32,
@@ -29,6 +30,10 @@ impl BackendConfig {
             "SNM_RUNTIME_URL",
             read_or_default(&mut read, "SNM_RUNTIME_URL", "http://127.0.0.1:9765"),
         )?;
+        let runtime_token = required(&mut read, "SNM_RUNTIME_TOKEN")?;
+        if runtime_token.len() < 32 || runtime_token == "change-me-with-a-long-random-secret" {
+            return Err(ConfigError::InvalidSecret("SNM_RUNTIME_TOKEN"));
+        }
         let database_url = required(&mut read, "DATABASE_URL")?;
         require_scheme(
             "DATABASE_URL",
@@ -38,20 +43,10 @@ impl BackendConfig {
         let redis_url = required(&mut read, "REDIS_URL")?;
         require_scheme("REDIS_URL", &redis_url, &["redis://", "rediss://"])?;
 
-        let database_max_connections = parse_bounded_u32(
-            &mut read,
-            "SNM_DATABASE_MAX_CONNECTIONS",
-            10,
-            1,
-            100,
-        )?;
-        let request_timeout_ms = parse_bounded_u64(
-            &mut read,
-            "SNM_REQUEST_TIMEOUT_MS",
-            15_000,
-            100,
-            120_000,
-        )?;
+        let database_max_connections =
+            parse_bounded_u32(&mut read, "SNM_DATABASE_MAX_CONNECTIONS", 10, 1, 100)?;
+        let request_timeout_ms =
+            parse_bounded_u64(&mut read, "SNM_REQUEST_TIMEOUT_MS", 15_000, 100, 120_000)?;
         let body_limit_bytes = parse_bounded_usize(
             &mut read,
             "SNM_HTTP_BODY_LIMIT_BYTES",
@@ -63,6 +58,7 @@ impl BackendConfig {
         Ok(Self {
             bind,
             runtime_url,
+            runtime_token,
             database_url,
             redis_url,
             database_max_connections,
@@ -111,11 +107,7 @@ fn normalized_http_url(name: &'static str, value: String) -> Result<String, Conf
     }
 }
 
-fn require_scheme(
-    name: &'static str,
-    value: &str,
-    allowed: &[&str],
-) -> Result<(), ConfigError> {
+fn require_scheme(name: &'static str, value: &str, allowed: &[&str]) -> Result<(), ConfigError> {
     if allowed.iter().any(|scheme| value.starts_with(scheme)) {
         Ok(())
     } else {
@@ -123,11 +115,7 @@ fn require_scheme(
     }
 }
 
-fn parse_bool(
-    value: Option<&str>,
-    default: bool,
-    name: &'static str,
-) -> Result<bool, ConfigError> {
+fn parse_bool(value: Option<&str>, default: bool, name: &'static str) -> Result<bool, ConfigError> {
     let Some(value) = value else {
         return Ok(default);
     };
@@ -155,7 +143,11 @@ fn parse_bounded_u32(
     if (min..=max).contains(&value) {
         Ok(value)
     } else {
-        Err(ConfigError::OutOfRange { name, min: min as u64, max: max as u64 })
+        Err(ConfigError::OutOfRange {
+            name,
+            min: u64::from(min),
+            max: u64::from(max),
+        })
     }
 }
 
@@ -213,6 +205,8 @@ pub(crate) enum ConfigError {
     InvalidSocketAddress(&'static str),
     #[error("invalid URL scheme in {0}")]
     InvalidUrlScheme(&'static str),
+    #[error("invalid secret in {0}")]
+    InvalidSecret(&'static str),
     #[error("invalid boolean in {0}")]
     InvalidBoolean(&'static str),
     #[error("invalid integer in {0}")]
@@ -227,6 +221,8 @@ pub(crate) enum ConfigError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     fn base() -> BTreeMap<String, String> {
@@ -235,7 +231,14 @@ mod tests {
                 "DATABASE_URL".to_owned(),
                 "postgresql://snm:secret@127.0.0.1/snm".to_owned(),
             ),
-            ("REDIS_URL".to_owned(), "redis://127.0.0.1:6379/0".to_owned()),
+            (
+                "REDIS_URL".to_owned(),
+                "redis://127.0.0.1:6379/0".to_owned(),
+            ),
+            (
+                "SNM_RUNTIME_TOKEN".to_owned(),
+                "0123456789abcdef0123456789abcdef0123456789abcdef".to_owned(),
+            ),
         ])
     }
 
@@ -265,9 +268,22 @@ mod tests {
     }
 
     #[test]
+    fn weak_runtime_secret_is_rejected() {
+        let mut values = base();
+        values.insert("SNM_RUNTIME_TOKEN".into(), "weak".into());
+        assert_eq!(
+            parse(values).unwrap_err(),
+            ConfigError::InvalidSecret("SNM_RUNTIME_TOKEN")
+        );
+    }
+
+    #[test]
     fn oversized_body_limit_is_rejected() {
         let mut values = base();
-        values.insert("SNM_HTTP_BODY_LIMIT_BYTES".into(), (32 * 1024 * 1024).to_string());
+        values.insert(
+            "SNM_HTTP_BODY_LIMIT_BYTES".into(),
+            (32 * 1024 * 1024).to_string(),
+        );
         assert!(matches!(
             parse(values),
             Err(ConfigError::OutOfRange {

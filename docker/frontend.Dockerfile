@@ -23,6 +23,7 @@ ENV PORT=3000
 RUN useradd --system --uid 10003 --create-home snm-web
 COPY --from=build --chown=10003:10003 /src/apps/frontend/.next/standalone ./
 COPY --from=build --chown=10003:10003 /src/apps/frontend/.next/static ./apps/frontend/.next/static
+COPY --from=build --chown=10003:10003 /src/apps/frontend/public ./apps/frontend/public
 USER 10003:10003
 EXPOSE 3000
 CMD ["node", "apps/frontend/server.js"]

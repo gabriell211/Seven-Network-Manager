@@ -1,15 +1,51 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
+
+import { ProductShell } from "@/src/components/product-shell";
+import { getPlatformSnapshot } from "@/src/lib/api";
+import { getOperationalContext } from "@/src/lib/session";
+
 import "./globals.css";
+import "./operational.css";
+import "./session.css";
+import "./api-docs.css";
+import "./ipam.css";
+import "./import.css";
 
 export const metadata: Metadata = {
-  title: "Seven Network Manager",
-  description: "Control plane for network infrastructure management",
+  title: {
+    default: "Seven Network Manager",
+    template: "%s · Seven Network Manager",
+  },
+  description: "Control plane on-premises para gerenciamento seguro de infraestrutura de rede.",
+  applicationName: "Seven Network Manager",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [{ url: "/icon.svg", type: "image/svg+xml" }],
+    shortcut: ["/icon.svg"],
+    apple: [{ url: "/icon.svg", type: "image/svg+xml" }],
+  },
 };
 
-export default function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+export const viewport: Viewport = {
+  colorScheme: "dark light",
+  themeColor: [
+    { media: "(prefers-color-scheme: dark)", color: "#070b12" },
+    { media: "(prefers-color-scheme: light)", color: "#f5f7fb" },
+  ],
+};
+
+export default async function RootLayout({ children }: Readonly<{ children: React.ReactNode }>) {
+  const [snapshot, contextResult] = await Promise.all([
+    getPlatformSnapshot(),
+    getOperationalContext(),
+  ]);
+  const context = contextResult.ok ? contextResult.data : null;
+
   return (
     <html lang="pt-BR">
-      <body>{children}</body>
+      <body>
+        <ProductShell context={context} snapshot={snapshot}>{children}</ProductShell>
+      </body>
     </html>
   );
 }

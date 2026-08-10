@@ -9,12 +9,25 @@ use crate::{OrganizationId, RoutingDomainId, SiteId};
 #[derive(Debug, Clone, Copy, PartialEq, Eq, Serialize, Deserialize)]
 #[serde(rename_all = "snake_case")]
 pub enum AddressState {
-    Observed,
     Available,
     Reserved,
     Assigned,
-    Deprecated,
+    Observed,
     Conflict,
+    Excluded,
+}
+
+impl AddressState {
+    pub fn as_str(self) -> &'static str {
+        match self {
+            Self::Available => "available",
+            Self::Reserved => "reserved",
+            Self::Assigned => "assigned",
+            Self::Observed => "observed",
+            Self::Conflict => "conflict",
+            Self::Excluded => "excluded",
+        }
+    }
 }
 
 #[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
@@ -78,6 +91,16 @@ mod tests {
     use super::*;
 
     #[test]
+    fn address_states_match_persisted_contract() {
+        assert_eq!(AddressState::Available.as_str(), "available");
+        assert_eq!(AddressState::Reserved.as_str(), "reserved");
+        assert_eq!(AddressState::Assigned.as_str(), "assigned");
+        assert_eq!(AddressState::Observed.as_str(), "observed");
+        assert_eq!(AddressState::Conflict.as_str(), "conflict");
+        assert_eq!(AddressState::Excluded.as_str(), "excluded");
+    }
+
+    #[test]
     fn same_prefix_is_legal_in_different_routing_domains() {
         let org = OrganizationId::new();
         let site = SiteId::new();
@@ -114,5 +137,19 @@ mod tests {
             prefix: "10.0.0.128/25".parse().unwrap(),
         };
         assert!(prefixes_conflict(&left, &right));
+    }
+
+    #[test]
+    fn ipv6_link_local_requires_interface_scope() {
+        let allocation = IpAllocation {
+            id: Uuid::now_v7(),
+            organization_id: OrganizationId::new(),
+            site_id: SiteId::new(),
+            routing_domain_id: RoutingDomainId::new(),
+            interface_id: None,
+            address: "fe80::1".parse().unwrap(),
+            state: AddressState::Observed,
+        };
+        assert!(allocation.validate().is_err());
     }
 }

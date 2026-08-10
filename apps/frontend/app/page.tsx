@@ -1,58 +1,170 @@
-import { getSystemStatus } from "@/src/lib/api";
+import Link from "next/link";
+import { redirect } from "next/navigation";
 
-const modules = [
-  ["Inventário", "Ativos, interfaces e identidade técnica"],
-  ["IPAM", "IPv4, IPv6 e routing domains sem colisões falsas"],
-  ["Discovery", "Descoberta executada no runtime local"],
-  ["Telemetria", "SNMP, checks e eventos operacionais"],
-];
+import { Icon } from "@/src/components/icon";
+import { OperationalIcon } from "@/src/components/operational-icon";
+import { StatusCard } from "@/src/components/status-card";
+import { getPlatformSnapshot } from "@/src/lib/api";
+import { getOperationalContext } from "@/src/lib/session";
 
 export default async function Home() {
-  const system = await getSystemStatus();
+  const [snapshot, context] = await Promise.all([
+    getPlatformSnapshot(),
+    getOperationalContext(),
+  ]);
+  if (!context.ok && context.status === 401) redirect("/login");
+
+  const { readiness, system } = snapshot;
+  const backendStatus = system ? "ready" : "offline";
+  const runtimeStatus = toCardStatus(readiness?.runtime);
+  const databaseStatus = toCardStatus(readiness?.database);
+  const redisStatus = toCardStatus(readiness?.redis);
+  const canViewInventory = context.ok
+    ? context.data.sites.some((site) => site.permissions.includes("devices.view"))
+    : false;
+  const canViewIpam = context.ok
+    ? context.data.sites.some((site) => site.permissions.includes("ipam.view"))
+    : false;
 
   return (
-    <main className="mx-auto min-h-screen max-w-7xl px-6 py-10 lg:px-10">
-      <header className="flex flex-col gap-6 border-b border-[var(--border)] pb-8 lg:flex-row lg:items-end lg:justify-between">
+    <div className="page-stack">
+      <section className="page-heading">
         <div>
-          <p className="mb-3 text-sm font-semibold tracking-[0.2em] text-sky-400">SEVEN / CONTROL PLANE</p>
-          <h1 className="text-4xl font-semibold tracking-tight lg:text-5xl">Network Manager</h1>
-          <p className="mt-4 max-w-2xl text-base leading-7 text-[var(--muted)]">
-            Administração de infraestrutura com execução LAN isolada do control plane e contexto explícito de site e routing domain.
+          <span className="eyebrow">Visão operacional</span>
+          <h1>Infraestrutura sob controle.</h1>
+          <p>
+            Estado real do control plane e das dependências que sustentam a execução segura no ambiente gerenciado.
           </p>
         </div>
-        <div className="rounded-xl border border-[var(--border)] bg-[var(--panel)] px-5 py-4">
-          <p className="text-xs uppercase tracking-wider text-[var(--muted)]">Backend</p>
-          <p className="mt-1 font-medium">{system ? `online · v${system.version}` : "indisponível"}</p>
-        </div>
-      </header>
-
-      <section className="grid gap-4 py-8 md:grid-cols-2 xl:grid-cols-4">
-        {modules.map(([title, description]) => (
-          <article key={title} className="rounded-2xl border border-[var(--border)] bg-[var(--panel)] p-5">
-            <div className="mb-8 h-2 w-2 rounded-full bg-sky-400" />
-            <h2 className="text-lg font-semibold">{title}</h2>
-            <p className="mt-2 text-sm leading-6 text-[var(--muted)]">{description}</p>
-          </article>
-        ))}
+        <Link className="button button--secondary" href="/">
+          <Icon name="refresh" size={17} />
+          Atualizar status
+        </Link>
       </section>
 
-      <section className="rounded-2xl border border-[var(--border)] bg-[var(--panel-strong)] p-6">
-        <p className="text-xs uppercase tracking-wider text-[var(--muted)]">Deployment</p>
-        <div className="mt-4 grid gap-4 md:grid-cols-3">
-          <Status label="Control plane" value={system ? "healthy" : "offline"} />
-          <Status label="Runtime placement" value="site-local / headless" />
-          <Status label="Mode" value={system?.deploymentMode ?? "production-mvp-onprem"} />
+      <section aria-labelledby="platform-status-title" className="section-block">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Plataforma</span>
+            <h2 id="platform-status-title">Saúde dos componentes</h2>
+          </div>
+          <span className="timestamp">Leitura: {formatTimestamp(snapshot.capturedAt)}</span>
+        </div>
+
+        <div className="status-grid">
+          <StatusCard
+            detail={system ? system.deploymentMode : "API não respondeu dentro do limite"}
+            icon="activity"
+            label="Control plane"
+            status={backendStatus}
+            value={system ? `v${system.version}` : "Offline"}
+          />
+          <StatusCard
+            detail={readiness ? `${readiness.appliedMigrations} migrations aplicadas` : "Readiness indisponível"}
+            icon="database"
+            label="PostgreSQL"
+            status={databaseStatus}
+            value={formatComponentStatus(readiness?.database)}
+          />
+          <StatusCard
+            detail="Coordenação e cache efêmero"
+            icon="redis"
+            label="Redis"
+            status={redisStatus}
+            value={formatComponentStatus(readiness?.redis)}
+          />
+          <StatusCard
+            detail="Boundary obrigatório para operações na LAN"
+            icon="runtime"
+            label="Site runtime"
+            status={runtimeStatus}
+            value={formatComponentStatus(readiness?.runtime)}
+          />
         </div>
       </section>
-    </main>
+
+      <section aria-labelledby="modules-title" className="section-block">
+        <div className="section-heading">
+          <div>
+            <span className="eyebrow">Operação</span>
+            <h2 id="modules-title">Capabilities disponíveis nesta sessão</h2>
+          </div>
+          <span className="section-heading__note">Somente recursos com contrato real e autorização efetiva</span>
+        </div>
+
+        <div className="module-grid">
+          {canViewInventory ? (
+            <Link className="module-card" href="/inventory">
+              <span className="module-card__icon"><Icon name="inventory" size={22} /></span>
+              <div>
+                <strong>Inventário</strong>
+                <p>Ativos, identidade técnica, lifecycle e contexto de site persistidos no PostgreSQL.</p>
+              </div>
+              <span aria-hidden="true" className="module-card__arrow">→</span>
+            </Link>
+          ) : null}
+          {canViewIpam ? (
+            <Link className="module-card" href="/ipam">
+              <span className="module-card__icon"><Icon name="ipam" size={22} /></span>
+              <div>
+                <strong>IPAM</strong>
+                <p>Prefixos IPv4/IPv6, routing domains, capacidade e alocações com conflito escopado.</p>
+              </div>
+              <span aria-hidden="true" className="module-card__arrow">→</span>
+            </Link>
+          ) : null}
+          <Link className="module-card" href="/api-docs">
+            <span className="module-card__icon"><Icon name="settings" size={22} /></span>
+            <div>
+              <strong>Contrato REST</strong>
+              <p>Operações e schemas publicados pela especificação OpenAPI versionada.</p>
+            </div>
+            <span aria-hidden="true" className="module-card__arrow">→</span>
+          </Link>
+        </div>
+
+        {!canViewInventory && !canViewIpam ? (
+          <div className="operational-state">
+            <span className="operational-state__icon"><OperationalIcon name="lock" size={22} /></span>
+            <div>
+              <span className="eyebrow">Least privilege</span>
+              <h2>Nenhuma capability operacional autorizada</h2>
+              <p>A sessão não possui permissões operacionais em nenhum site. O painel não exibe módulos aos quais o backend não concede acesso.</p>
+            </div>
+          </div>
+        ) : null}
+      </section>
+
+      <section aria-labelledby="boundary-title" className="boundary-card">
+        <div className="boundary-card__icon"><Icon name="shield" size={24} /></div>
+        <div>
+          <span className="eyebrow">Boundary de segurança</span>
+          <h2 id="boundary-title">Control plane → site-runtime → LAN gerenciada</h2>
+          <p>
+            O navegador não executa operações de rede e o backend não abre SNMP, ICMP, WinRM ou SSH como fallback quando o runtime está indisponível.
+          </p>
+        </div>
+      </section>
+    </div>
   );
 }
 
-function Status({ label, value }: { label: string; value: string }) {
-  return (
-    <div>
-      <p className="text-sm text-[var(--muted)]">{label}</p>
-      <p className="mt-1 font-medium">{value}</p>
-    </div>
-  );
+function toCardStatus(value: string | undefined): "ready" | "degraded" | "offline" | "neutral" {
+  if (value === "ready") return "ready";
+  if (value === "unavailable" || value === undefined) return "offline";
+  return "degraded";
+}
+
+function formatComponentStatus(value: string | undefined) {
+  if (value === "ready") return "Operacional";
+  if (value === "unavailable") return "Indisponível";
+  return value ?? "Sem resposta";
+}
+
+function formatTimestamp(value: string) {
+  return new Intl.DateTimeFormat("pt-BR", {
+    dateStyle: "short",
+    timeStyle: "medium",
+    timeZone: "America/Sao_Paulo",
+  }).format(new Date(value));
 }

@@ -1,0 +1,36 @@
+name: frontend-contracts
+
+on:
+  pull_request:
+  push:
+    branches: [main, "agent/**"]
+
+permissions:
+  contents: read
+
+jobs:
+  contracts:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version-file: .node-version
+          package-manager-cache: false
+      - name: Activate pinned pnpm
+        run: |
+          corepack enable
+          corepack prepare pnpm@11.21.0 --activate
+          test "$(pnpm --version)" = "11.21.0"
+      - name: Install frozen dependency graph
+        run: pnpm install --frozen-lockfile
+      - name: Verify generated REST contract
+        run: python3 scripts/generate_frontend_contract.py --check
+      - name: Run frontend contract and boundary tests
+        run: pnpm --filter @seven-network-manager/frontend test
+      - name: Typecheck
+        run: pnpm --filter @seven-network-manager/frontend typecheck
+      - name: Lint
+        run: pnpm --filter @seven-network-manager/frontend lint
+      - name: Production build
+        run: pnpm --filter @seven-network-manager/frontend build

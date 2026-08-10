@@ -1,0 +1,28 @@
+{
+  "schemaVersion": 1,
+  "generatedAt": "2026-08-10T04:02:41.469803+00:00",
+  "recordCount": 53568,
+  "sources": [
+    {
+      "registry": "MA-L",
+      "bits": 24,
+      "url": "https://standards-oui.ieee.org/oui/oui.csv",
+      "sha256": "7c46a457fc59d604beb5e508bad40ff563644275bbcfe7b5304cf51b12f35b4d",
+      "etag": "\"6a794d16-3a29f8\""
+    },
+    {
+      "registry": "MA-M",
+      "bits": 28,
+      "url": "https://standards-oui.ieee.org/oui28/mam.csv",
+      "sha256": "9fe8ebf6582c13f80a1cb372b13c0816c0608f2272bfed87744167bf13dfdb5e",
+      "etag": "\"6a794d02-b5d37\""
+    },
+    {
+      "registry": "MA-S",
+      "bits": 36,
+      "url": "https://standards-oui.ieee.org/oui36/oui36.csv",
+      "sha256": "bb1b9c273ca365ce96d4939072e7afe0042024d4c726baa429716f29b42aa127",
+      "etag": "\"6a794d1b-a15fe\""
+    }
+  ]
+}

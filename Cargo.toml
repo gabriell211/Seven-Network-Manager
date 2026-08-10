@@ -3,10 +3,14 @@ members = [
   "apps/backend",
   "apps/site-runtime",
   "crates/audit-store",
+  "crates/discovery-core",
+  "crates/discovery-store",
   "crates/domain",
   "crates/executor-core",
+  "crates/fingerprint-core",
   "crates/identity-store",
   "crates/inventory-store",
+  "crates/ipam-store",
   "crates/observability",
   "crates/platform-events",
   "crates/security",
@@ -29,6 +33,7 @@ base64 = "0.22"
 chrono = { version = "0.4", features = ["serde"] }
 hmac = "0.12"
 ipnet = { version = "2", features = ["serde"] }
+libc = "0.2"
 opentelemetry = { version = "0.32", features = ["metrics", "trace"] }
 opentelemetry-otlp = { version = "0.32", default-features = false, features = ["http-proto", "metrics", "reqwest-rustls", "trace"] }
 opentelemetry_sdk = { version = "0.32", features = ["metrics", "rt-tokio", "trace"] }

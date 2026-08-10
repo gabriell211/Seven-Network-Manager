@@ -1,0 +1,9 @@
+.import-panel { display: grid; gap: 16px; }
+.import-form { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: end; gap: 12px; padding: 18px; border: 1px solid var(--border); border-radius: 14px; background: var(--panel); }
+.import-form input[type="file"] { padding: 10px; }
+.import-report { display: grid; gap: 14px; }
+.import-errors { display: grid; gap: 7px; max-height: 320px; overflow: auto; padding-right: 4px; }
+.import-errors > div { padding: 11px 12px; border: 1px solid color-mix(in srgb, #ef4444 36%, var(--border)); border-radius: 10px; background: color-mix(in srgb, #ef4444 5%, var(--panel)); }
+.import-errors strong, .import-errors span { display: block; }
+.import-errors span { margin-top: 4px; color: var(--muted); font-size: .8rem; }
+@media (max-width: 760px) { .import-form { grid-template-columns: 1fr; } .import-form .button { width: 100%; justify-content: center; } }

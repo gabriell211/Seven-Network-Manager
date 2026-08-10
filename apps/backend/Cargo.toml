@@ -9,13 +9,17 @@ rust-version.workspace = true
 async-trait.workspace = true
 axum.workspace = true
 chrono.workspace = true
+ipnet.workspace = true
 redis.workspace = true
 reqwest.workspace = true
 serde.workspace = true
 serde_json.workspace = true
 snm-audit-store = { path = "../../crates/audit-store" }
+snm-discovery-core = { path = "../../crates/discovery-core" }
+snm-discovery-store = { path = "../../crates/discovery-store" }
 snm-domain = { path = "../../crates/domain" }
 snm-inventory-store = { path = "../../crates/inventory-store" }
+snm-ipam-store = { path = "../../crates/ipam-store" }
 snm-observability = { path = "../../crates/observability" }
 snm-security = { path = "../../crates/security" }
 sqlx.workspace = true
