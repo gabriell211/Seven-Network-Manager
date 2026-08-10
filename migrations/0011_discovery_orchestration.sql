@@ -52,6 +52,8 @@ CREATE INDEX idx_discovery_scopes_schedule
 ALTER TABLE discovery_runs
   ADD COLUMN request_kind text NOT NULL DEFAULT 'manual'
     CHECK (request_kind IN ('manual', 'scheduled')),
+  ADD COLUMN seed_targets inet[] NOT NULL DEFAULT '{}',
+  ADD COLUMN scope_snapshot jsonb NOT NULL DEFAULT '{}'::jsonb,
   ADD COLUMN cancellation_requested_at timestamptz,
   ADD COLUMN progress_total integer NOT NULL DEFAULT 0 CHECK (progress_total >= 0),
   ADD COLUMN progress_completed integer NOT NULL DEFAULT 0 CHECK (progress_completed >= 0),
