@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, env, net::SocketAddr, time::Duration};
+use std::{env, net::SocketAddr, time::Duration};
 
 use thiserror::Error;
 
@@ -155,7 +155,11 @@ fn parse_bounded_u32(
     if (min..=max).contains(&value) {
         Ok(value)
     } else {
-        Err(ConfigError::OutOfRange { name, min: min as u64, max: max as u64 })
+        Err(ConfigError::OutOfRange {
+            name,
+            min: u64::from(min),
+            max: u64::from(max),
+        })
     }
 }
 
@@ -227,6 +231,8 @@ pub(crate) enum ConfigError {
 
 #[cfg(test)]
 mod tests {
+    use std::collections::BTreeMap;
+
     use super::*;
 
     fn base() -> BTreeMap<String, String> {
@@ -235,7 +241,10 @@ mod tests {
                 "DATABASE_URL".to_owned(),
                 "postgresql://snm:secret@127.0.0.1/snm".to_owned(),
             ),
-            ("REDIS_URL".to_owned(), "redis://127.0.0.1:6379/0".to_owned()),
+            (
+                "REDIS_URL".to_owned(),
+                "redis://127.0.0.1:6379/0".to_owned(),
+            ),
         ])
     }
 
@@ -267,7 +276,10 @@ mod tests {
     #[test]
     fn oversized_body_limit_is_rejected() {
         let mut values = base();
-        values.insert("SNM_HTTP_BODY_LIMIT_BYTES".into(), (32 * 1024 * 1024).to_string());
+        values.insert(
+            "SNM_HTTP_BODY_LIMIT_BYTES".into(),
+            (32 * 1024 * 1024).to_string(),
+        );
         assert!(matches!(
             parse(values),
             Err(ConfigError::OutOfRange {
